@@ -70,28 +70,70 @@ Install the `xgboost` package (version 2.1.4 or more recent) using the [XGBoost 
 #### StatsForecast
 Install the `statsforecast` package (version 1.4 or more recent) using the [StatsForecast install guide](https://nixtlaverse.nixtla.io/statsforecast/index.html#installation)
 
-#### TimesFM
-To use the `TimesFMModel` wrapper for Google's TimesFM foundation model:
+### Foundation Models (Time Series Foundation Models)
 
-**Option 1: Install with Darts extras (recommended)**
+Darts provides wrappers for several Time Series Foundation Models (TSFMs)—large pre-trained models that can perform zero-shot forecasting without training on your specific dataset. These models have been trained on massive corpora of time series data and can recognize universal temporal patterns.
+
+#### Installing Foundation Models
+
+**Option 1: Install specific foundation models**
 ```bash
+# Chronos (Amazon)
+pip install "darts[chronos]"
+# or with uv
+uv pip install "darts[chronos]"
+
+# TimesFM (Google)
 pip install "darts[timesfm]"
 # or with uv
 uv pip install "darts[timesfm]"
+
+# Lag-Llama
+pip install "darts[lag-llama]"
+# or with uv
+uv pip install "darts[lag-llama]"
 ```
 
-**Option 2: Manual installation from source**
-1. Install Darts with PyTorch support: `pip install "u8darts[torch]"` or `pip install darts`
-2. Install TimesFM from source:
-   ```bash
-   git clone https://github.com/google-research/timesfm.git
-   cd timesfm
-   pip install -e .[torch]
-   ```
+**Option 2: Install all foundation models**
+```bash
+pip install "darts[all-foundation]"
+# or with uv
+uv pip install "darts[all-foundation]"
+```
+
+#### Chronos (Amazon)
+Amazon's Chronos family of foundation models for zero-shot time series forecasting.
 
 **Requirements:**
-- Python 3.11+ (for PyTorch version)
-- PyTorch 2.0+ with MPS support (for Apple Silicon) or CUDA (for NVIDIA GPUs)
+- chronos-forecasting>=2.0.0 (installed automatically with `darts[chronos]`)
+- PyTorch 2.0+
+
+**Model variants:**
+- `small`: Fastest, lower memory (~300M parameters)
+- `base`: Balanced performance and speed (~700M parameters)
+- `large`: Best accuracy, higher memory (~1.5B parameters)
+
+**Example:**
+```python
+from darts.datasets import AirPassengersDataset
+from darts.models.forecasting.foundation import ChronosModel
+
+series = AirPassengersDataset().load()
+model = ChronosModel(variant="base")
+forecast = model.predict(n=12, series=series)
+```
+
+**References:**
+- [Chronos arXiv paper](https://arxiv.org/abs/2403.07815)
+- [Chronos GitHub repository](https://github.com/amazon-science/chronos-forecasting)
+
+#### TimesFM (Google)
+Google's TimesFM (Time Series Foundation Model) for zero-shot forecasting.
+
+**Requirements:**
+- timesfm package (installed automatically with `darts[timesfm]`)
+- Python 3.11+
+- PyTorch 2.0+ with MPS support (Apple Silicon) or CUDA (NVIDIA GPUs)
 
 **Example:**
 ```python
@@ -104,7 +146,17 @@ model.fit(series)
 forecast = model.predict(n=12, series=series)
 ```
 
-For more details, see the [TimesFM GitHub repository](https://github.com/google-research/timesfm) and [HuggingFace model card](https://huggingface.co/google/timesfm-2.5-200m-pytorch).
+**References:**
+- [TimesFM GitHub repository](https://github.com/google-research/timesfm)
+- [HuggingFace model card](https://huggingface.co/google/timesfm-2.5-200m-pytorch)
+
+#### Lag-Llama
+Lag-Llama foundation model for time series forecasting.
+
+**Requirements:**
+- lag-llama package (installed automatically with `darts[lag-llama]`)
+
+**Note:** For detailed documentation on foundation models, their capabilities, and advanced usage patterns (zero-shot, few-shot, fine-tuning), see the [Foundation Models User Guide](docs/userguide/foundation_models.md).
 
 ### Enabling GPU support
 Darts relies on PyTorch for the neural network models.

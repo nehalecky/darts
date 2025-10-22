@@ -155,8 +155,8 @@ def test_chronos_family_structure():
         "chronos must have at least one subfamily"
 
 
-def test_variant_has_capabilities():
-    """Verify variants have required capability flags."""
+def test_subfamily_has_capabilities():
+    """Verify subfamilies have required capability flags."""
     capabilities_path = (
         Path(__file__).parents[4]
         / "darts"
@@ -169,18 +169,12 @@ def test_variant_has_capabilities():
     with open(capabilities_path, "r") as f:
         capabilities = yaml.safe_load(f)
 
-    # Check chronos variant has capability flags
+    # Check chronos subfamily has capability flags
     chronos = capabilities["chronos"]
     subfamilies = chronos["subfamilies"]
 
-    # Get first subfamily and first variant
+    # Get first subfamily (chronos-2 has no variants, capabilities at subfamily level)
     first_subfamily = next(iter(subfamilies.values()))
-    assert "variants" in first_subfamily, "subfamily missing 'variants' key"
-
-    variants = first_subfamily["variants"]
-    assert len(variants) > 0, "subfamily must have at least one variant"
-
-    first_variant = next(iter(variants.values()))
 
     # Check for required capability flags
     required_capabilities = [
@@ -189,7 +183,7 @@ def test_variant_has_capabilities():
     ]
 
     for capability in required_capabilities:
-        assert capability in first_variant, \
-            f"variant missing required capability: {capability}"
-        assert isinstance(first_variant[capability], bool), \
+        assert capability in first_subfamily, \
+            f"subfamily missing required capability: {capability}"
+        assert isinstance(first_subfamily[capability], bool), \
             f"capability '{capability}' must be boolean"

@@ -46,20 +46,25 @@ def get_family(family_name: str) -> Dict[str, Any]:
 
 
 def get_variant(
-    family_name: str, subfamily_name: str, variant_name: str
+    family_name: str, subfamily_name: str, variant_name: str = None
 ) -> Dict[str, Any]:
-    """Get capabilities for a specific model variant.
+    """Get capabilities for a specific model variant or subfamily.
+
+    Supports both models with variants (e.g., TimesFM with base/large) and
+    models without variants (e.g., Chronos 2 as single model).
 
     Args:
         family_name: Name of the model family (e.g., "chronos").
         subfamily_name: Name of the subfamily (e.g., "chronos-2").
-        variant_name: Name of the variant (e.g., "base", "small", "large").
+        variant_name: Name of the variant (e.g., "base", "small"). Optional
+            if the subfamily has no variants.
 
     Returns:
-        Dictionary containing variant capabilities (multivariate, probabilistic, etc.).
+        Dictionary containing capabilities (multivariate, probabilistic, etc.).
 
     Raises:
         KeyError: If family, subfamily, or variant doesn't exist.
+        ValueError: If variant_name not provided but subfamily has variants.
     """
     family = get_family(family_name)
 
@@ -75,15 +80,28 @@ def get_variant(
         )
 
     subfamily = subfamilies[subfamily_name]
-    if "variants" not in subfamily:
-        raise KeyError(
-            f"Subfamily '{subfamily_name}' has no variants"
-        )
 
-    variants = subfamily["variants"]
-    if variant_name not in variants:
-        raise KeyError(
-            f"Variant '{variant_name}' not found in subfamily '{subfamily_name}'"
-        )
+    # Check if this subfamily has variants
+    if "variants" in subfamily:
+        # Has variants - variant_name is required
+        if variant_name is None:
+            raise ValueError(
+                f"Subfamily '{subfamily_name}' has variants. "
+                f"You must specify variant_name."
+            )
 
-    return variants[variant_name]
+        variants = subfamily["variants"]
+        if variant_name not in variants:
+            raise KeyError(
+                f"Variant '{variant_name}' not found in subfamily '{subfamily_name}'"
+            )
+
+        return variants[variant_name]
+    else:
+        # No variants - return subfamily capabilities directly
+        if variant_name is not None:
+            raise ValueError(
+                f"Subfamily '{subfamily_name}' has no variants. "
+                f"Do not specify variant_name."
+            )
+        return subfamily

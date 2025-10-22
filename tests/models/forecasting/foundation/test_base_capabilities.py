@@ -98,7 +98,8 @@ def test_capability_properties_match_registry():
     with open(capabilities_path, "r") as f:
         caps = yaml.safe_load(f)
 
-    expected = caps["chronos"]["subfamilies"]["chronos-2"]["variants"]["base"]
+    # Chronos 2 has no variants - capabilities are at subfamily level
+    expected = caps["chronos"]["subfamilies"]["chronos-2"]
 
     # Mock darts dependencies
     sys.modules['darts'] = Mock()
@@ -124,11 +125,11 @@ def test_capability_properties_match_registry():
     base = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(base)
 
-    # Create test model
+    # Create test model (Chronos 2 has no variants)
     class TestModel(base.FoundationForecastingModel):
         _family_name = "chronos"
         _subfamily_name = "chronos-2"
-        _variant_name = "base"
+        _variant_name = None  # No variants for Chronos 2
 
         def _zero_shot_fit(self, *args, **kwargs):
             return self

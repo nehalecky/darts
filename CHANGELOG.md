@@ -14,17 +14,25 @@ but cannot always guarantee backwards compatibility. Changes that may **break co
 - Added `TimesFMModel` for Google's TimesFM 2.5 foundation model (200M parameters).
   Supports univariate zero-shot forecasting without requiring training.
   [#XXXX](https://github.com/unit8co/darts/pull/XXXX) by [nehalecky](https://github.com/nehalecky).
+- Added `ChronosModel` for Amazon's Chronos 2 foundation model.
+  Supports univariate zero-shot probabilistic forecasting with uncertainty quantification.
+  [#XXXX](https://github.com/unit8co/darts/pull/XXXX) by [nehalecky](https://github.com/nehalecky).
 - Added `foundation/` package infrastructure for foundation models:
-  - Base classes and utilities for future model integrations
+  - Base classes and utilities for model integrations
+  - Capabilities registry (YAML-based) for model metadata
   - Device detection and management (CUDA, MPS, CPU)
-  - Extensible architecture for Chronos 2 and additional models
+  - Extensible architecture for additional models
   [#XXXX](https://github.com/unit8co/darts/pull/XXXX) by [nehalecky](https://github.com/nehalecky).
 - Added foundation model documentation:
-  - User guide explaining zero-shot forecasting
-  - Jupyter notebook tutorial (`examples/25-TimesFM-foundation-model.ipynb`)
+  - User guide explaining zero-shot forecasting and probabilistic forecasts
+  - Jupyter notebook tutorials:
+    - `examples/25-TimesFM-foundation-model.ipynb` - Google's TimesFM
+    - `examples/26-Chronos-foundation-model.ipynb` - Amazon's Chronos 2
   - Roadmap for future model integrations
   [#XXXX](https://github.com/unit8co/darts/pull/XXXX) by [nehalecky](https://github.com/nehalecky).
-- Added optional dependency `darts[timesfm]` for installing TimesFM from GitHub source.
+- Added optional dependencies:
+  - `darts[timesfm]` for installing TimesFM from GitHub source
+  - `darts[chronos]` for installing Chronos from PyPI (chronos-forecasting>=2.0.0)
 
 **Improved**
 

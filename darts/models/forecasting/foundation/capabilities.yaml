@@ -5,36 +5,31 @@ chronos:
   description: "Amazon Chronos family of time series foundation models"
   subfamilies:
     chronos-2:
-      description: "Chronos 2.0 - Second generation with improved architecture"
-      variants:
-        base:
-          model_id: "amazon/chronos-2-base"
-          multivariate: false
-          probabilistic: true
-          context_length: 512
-          prediction_length: 64
-        small:
-          model_id: "amazon/chronos-2-small"
-          multivariate: false
-          probabilistic: true
-          context_length: 512
-          prediction_length: 64
-        large:
-          model_id: "amazon/chronos-2-large"
-          multivariate: false
-          probabilistic: true
-          context_length: 512
-          prediction_length: 64
+      description: "Chronos 2.0 - Universal forecasting (univariate, multivariate, covariate-informed)"
+      model_id: "amazon/chronos-2"
+      # Capabilities
+      multivariate: true
+      probabilistic: true
+      # Hard architectural limits (read-only constants)
+      max_context_length: 8192        # pipeline.model_context_length
+      max_forecast_horizon: 1024       # max_output_patches (64) × patch_size (16)
+      patch_size: 16                   # pipeline.model_output_patch_size
+      default_context_length: 2048     # pipeline.default_context_length
+      # Legacy fields (deprecated, kept for backward compatibility)
+      context_length: 512              # DEPRECATED: use default_context_length
+      prediction_length: 64            # DEPRECATED: use max_forecast_horizon
 
 timesfm:
   description: "Google TimesFM (Time Series Foundation Model)"
   subfamilies:
-    timesfm-1:
-      description: "TimesFM 1.0 - First generation"
-      variants:
-        base:
-          model_id: "google/timesfm-1.0-200m"
-          multivariate: false
-          probabilistic: true
-          context_length: 512
-          prediction_length: 128
+    timesfm-2.5:
+      description: "TimesFM 2.5 - Latest generation with 16k context support"
+      model_id: "google/timesfm-2.5-200m-pytorch"
+      # Capabilities
+      multivariate: false
+      probabilistic: true
+      # Hard architectural limits (read-only constants)
+      max_context_length: 16384        # GitHub README: "supports up to 16k context"
+      max_forecast_horizon: 256        # timesfm.py line 190
+      patch_size: 32                   # timesfm.py line 122 validation
+      default_context_length: 1024     # HuggingFace examples

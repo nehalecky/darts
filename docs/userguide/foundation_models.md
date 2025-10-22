@@ -187,23 +187,117 @@ TimesFM currently supports:
 
 Despite these limitations, TimesFM often outperforms traditional models without any training, making it valuable for rapid prototyping and cold-start scenarios.
 
-## Future: Chronos 2 Integration
+## Using Chronos 2 (Amazon's Foundation Model)
 
-The next foundation model integration is **Chronos 2** from Amazon Science ([Issue #2933](https://github.com/unit8co/darts/issues/2933)).
+[Chronos](https://arxiv.org/abs/2403.07815) is Amazon's foundation model that applies language model techniques to time series forecasting. Released in [v2.0.0](https://github.com/amazon-science/chronos-forecasting/releases/tag/v2.0.0), Chronos 2 uses transformer architectures to learn universal temporal patterns.
 
-Released in [v2.0.0](https://github.com/amazon-science/chronos-forecasting/releases/tag/v2.0.0), [Chronos 2](https://arxiv.org/abs/2403.07815) will complement TimesFM with:
-- **True multivariate forecasting**: Model cross-dependencies between multiple related series
-- **Covariate support**: Past and future exogenous variables
-- **Probabilistic forecasts**: Quantile-based uncertainty
-- **Extended context**: 8,192 tokens vs TimesFM's 512
+### Installation
 
-**Timeline**: Planned for Q1 2026.
+```bash
+# Install Darts with Chronos support
+pip install "darts[chronos]"
+```
+
+This installs chronos-forecasting>=2.0.0 from PyPI for probabilistic forecasting.
+
+### Zero-Shot Forecasting Workflow
+
+Chronos 2 provides probabilistic forecasts out of the box:
+
+```python
+from darts.models import ChronosModel
+from darts.datasets import AirPassengersDataset
+
+# Load your time series
+series = AirPassengersDataset().load()
+
+# Create the pre-trained model (no training needed!)
+model = ChronosModel()
+
+# Generate zero-shot probabilistic forecast
+forecast = model.predict(
+    n=12,               # Forecast 12 steps ahead
+    series=series,      # Your time series
+    num_samples=100     # Number of samples for probabilistic forecast
+)
+
+# Plot with confidence intervals
+import matplotlib.pyplot as plt
+series.plot(label="Historical")
+forecast.plot(
+    label="Chronos 2 Forecast",
+    low_quantile=0.1,
+    high_quantile=0.9
+)
+plt.legend()
+plt.show()
+```
+
+### Probabilistic Forecasting
+
+Unlike deterministic models, Chronos 2 provides uncertainty quantification through quantile predictions:
+
+```python
+# Generate forecast with confidence intervals
+prob_forecast = model.predict(
+    n=24,
+    series=series,
+    num_samples=200
+)
+
+# Access different quantiles
+median = prob_forecast.quantile_timeseries(quantile=0.5)
+lower_90 = prob_forecast.quantile_timeseries(quantile=0.05)
+upper_90 = prob_forecast.quantile_timeseries(quantile=0.95)
+```
+
+The probabilistic nature makes Chronos 2 particularly valuable for:
+- **Risk assessment**: Plan for best/worst case scenarios
+- **Decision making**: Different actions for different probability levels
+- **Anomaly detection**: Values outside intervals may be unusual
+- **Uncertainty quantification**: Know when forecasts are less reliable
+
+### Key Capabilities
+
+Chronos 2 currently supports:
+- **Univariate forecasting only**: Forecasts one time series at a time
+- **Zero-shot inference**: No training required (uses pre-trained weights)
+- **Probabilistic forecasts**: Quantile-based uncertainty estimates
+- **Context length**: 512 time steps for historical context
+- **No covariates**: External variables not supported in current version
+
+### When to Use Chronos 2
+
+**Chronos 2 excels when:**
+- You need uncertainty quantification (confidence intervals)
+- Working with limited historical data
+- Cold-start scenarios (new products/services)
+- Batch forecasting thousands of diverse series
+- Quick prototyping without hyperparameter tuning
+
+**Consider traditional models when:**
+- You need multivariate cross-dependencies (coming in future versions)
+- Domain expertise can be encoded (business rules)
+- Explainability is critical
+- You have extensive historical data with strong local patterns
 
 ## Learn More
 
-- **[Tutorial Notebook](../../examples/25-TimesFM-foundation-model.ipynb)** - Hands-on examples with real datasets
+**Tutorial Notebooks:**
+- **[TimesFM Tutorial](../../examples/25-TimesFM-foundation-model.ipynb)** - Google's TimesFM with zero-shot forecasting
+- **[Chronos 2 Tutorial](../../examples/26-Chronos-foundation-model.ipynb)** - Amazon's Chronos with probabilistic forecasts
+
+**GitHub Issues & Tracking:**
 - **[Issue #2359](https://github.com/unit8co/darts/issues/2359)** - Foundation models tracking (April 2024)
 - **[Issue #2933](https://github.com/unit8co/darts/issues/2933)** - Chronos 2 integration request (October 2025)
+
+**Academic Papers:**
 - **[Foundation Models Survey](https://arxiv.org/abs/2108.07258)** - Comprehensive overview of pre-training paradigms
 - **[TimesFM Paper](https://arxiv.org/abs/2310.10688)** - Technical details on decoder-only architecture
-- **[Chronos Paper](https://arxiv.org/abs/2403.07815)** - Probabilistic forecasting with language model techniques
+- **[Chronos Paper](https://arxiv.org/abs/2403.07815)** - "Chronos: Learning the Language of Time Series"
+
+**External Resources:**
+- **[TimesFM GitHub](https://github.com/google-research/timesfm)** - Google's official repository
+- **[TimesFM HuggingFace](https://huggingface.co/google/timesfm-2.5-200m-pytorch)** - Pre-trained model
+- **[Chronos GitHub](https://github.com/amazon-science/chronos-forecasting)** - Amazon's official repository
+- **[Chronos HuggingFace](https://huggingface.co/amazon/chronos-2)** - Pre-trained model

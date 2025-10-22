@@ -12,15 +12,21 @@ import torch
 
 from darts import TimeSeries
 from darts.logging import get_logger, raise_if_not, raise_log
-from darts.models.forecasting.forecasting_model import GlobalForecastingModel
+
+from .base import FoundationForecastingModel
 
 logger = get_logger(__name__)
 
 
-class TimesFMModel(GlobalForecastingModel):
+class TimesFMModel(FoundationForecastingModel):
     """
     TimesFM Foundation Model for Time Series Forecasting
     -----------------------------------------------------
+
+    TODO: Migrate TimesFMModel to inherit from FoundationForecastingModel
+          instead of GlobalForecastingModel. This will provide better consistency
+          with other foundation models (ChronosModel) and enable shared capabilities
+          infrastructure. Currently on legacy infrastructure for backward compatibility.
 
     This class provides a wrapper around Google's TimesFM foundation model.
     TimesFM is a decoder-only transformer pre-trained on 100B+ time points
@@ -87,19 +93,23 @@ class TimesFMModel(GlobalForecastingModel):
     .. [3] HuggingFace Model: https://huggingface.co/google/timesfm-2.5-200m-pytorch
     """
 
+    # Capability identifiers
+    _family_name = "timesfm"
+    _subfamily_name = "timesfm-2.5"
+    # _variant_name is set dynamically based on model_size
+
     def __init__(
         self,
         model_version: str = "2.5",
         model_size: str = "200m",
-        max_context_length: int = 1024,
+        context_length: Optional[int] = None,
+        max_forecast_horizon: Optional[int] = None,
         zero_shot: bool = True,
         device: Optional[str] = None,
         normalize_inputs: bool = True,
         **kwargs
     ):
-        super().__init__()
-
-        # Validate inputs
+        # Validate inputs first (before calling super().__init__)
         raise_if_not(
             model_version in ["1.0", "2.0", "2.5"],
             f"model_version must be one of ['1.0', '2.0', '2.5'], got {model_version}",
@@ -124,11 +134,41 @@ class TimesFMModel(GlobalForecastingModel):
             logger
         )
 
+        # Set variant name based on model size for capabilities registry
+        self._variant_name = model_size
+
+        # Call parent constructor (FoundationForecastingModel)
+        super().__init__(**kwargs)
+
         self.model_version = model_version
         self.model_size = model_size
-        self.max_context_length = max_context_length
         self.zero_shot = zero_shot
         self.normalize_inputs = normalize_inputs
+
+        # Load hard architectural limits from capabilities registry
+        caps = get_variant("timesfm", f"timesfm-{model_version}")
+        self._hard_max_context = caps["max_context_length"]
+        self._hard_max_horizon = caps["max_forecast_horizon"]
+        self._patch_size = caps["patch_size"]
+        self._default_context_length = caps["default_context_length"]
+
+        # Validate and set user's minimum context_length preference
+        if context_length is None:
+            self.context_length = self._default_context_length
+        else:
+            validate_context_length(
+                context_length, self._hard_max_context, self._patch_size, logger
+            )
+            self.context_length = context_length
+
+        # Validate and set user's maximum forecast_horizon preference
+        if max_forecast_horizon is None:
+            self.max_forecast_horizon = self._hard_max_horizon
+        else:
+            validate_forecast_horizon(
+                max_forecast_horizon, self._hard_max_horizon, self._patch_size, logger
+            )
+            self.max_forecast_horizon = max_forecast_horizon
 
         # Auto-detect device
         self.device = self._detect_device() if device is None else device
@@ -138,7 +178,7 @@ class TimesFMModel(GlobalForecastingModel):
 
         logger.info(
             f"Initialized TimesFM {model_version} ({model_size}) "
-            f"with context length {max_context_length} on {self.device}"
+            f"with context length {self.context_length} on {self.device}"
         )
 
     def _detect_device(self) -> str:
@@ -186,7 +226,7 @@ class TimesFMModel(GlobalForecastingModel):
             # Compile model with forecast configuration
             self._model.compile(
                 timesfm.ForecastConfig(
-                    max_context=self.max_context_length,
+                    max_context=self.context_length,
                     max_horizon=256,  # Default, can be overridden in predict
                     normalize_inputs=self.normalize_inputs,
                     use_continuous_quantile_head=False,  # Not using probabilistic for now
@@ -202,16 +242,6 @@ class TimesFMModel(GlobalForecastingModel):
             logger.error(f"Failed to load TimesFM model: {e}")
             logger.error("Model loading will be attempted again on first predict() call")
             raise
-
-    @property
-    def supports_multivariate(self) -> bool:
-        """TimesFM only supports univariate series"""
-        return False
-
-    @property
-    def supports_probabilistic_prediction(self) -> bool:
-        """Probabilistic forecasting not yet implemented"""
-        return False
 
     @property
     def supports_transferable_series_prediction(self) -> bool:
@@ -245,21 +275,21 @@ class TimesFMModel(GlobalForecastingModel):
              min_future_cov_lag, max_future_cov_lag, output_chunk_shift)
         """
         return (
-            -self.max_context_length,  # min_target_lag: lookback window
-            0,                          # max_target_lag: no future target values
-            0,                          # min_past_cov_lag: no past covariates
-            0,                          # max_past_cov_lag
-            0,                          # min_future_cov_lag: no future covariates
-            0,                          # max_future_cov_lag
-            0,                          # output_chunk_shift: no shift
+            -self.context_length,  # min_target_lag: lookback window
+            0,                      # max_target_lag: no future target values
+            None,                   # min_past_cov_lag: no past covariates
+            None,                   # max_past_cov_lag
+            None,                   # min_future_cov_lag: no future covariates
+            None,                   # max_future_cov_lag
+            0,                      # output_chunk_shift: no shift
         )
 
     def _target_window_lengths(self) -> tuple[int, int]:
         """
         Returns the input and output window lengths for the model.
-        For TimesFM: (max_context_length, arbitrary forecast horizon)
+        For TimesFM: (context_length, arbitrary forecast horizon)
         """
-        return self.max_context_length, 0  # 0 means arbitrary forecast horizon
+        return self.context_length, 0  # 0 means arbitrary forecast horizon
 
     def _model_encoder_settings(self) -> tuple[int, int, bool, bool]:
         """
@@ -268,44 +298,38 @@ class TimesFMModel(GlobalForecastingModel):
         """
         return 0, 0, False, False
 
-    def fit(
+    def _zero_shot_fit(
         self,
         series: Union[TimeSeries, List[TimeSeries]],
         past_covariates: Optional[Union[TimeSeries, List[TimeSeries]]] = None,
         future_covariates: Optional[Union[TimeSeries, List[TimeSeries]]] = None,
+        **kwargs
     ) -> "TimesFMModel":
         """
-        Fit the TimesFM model.
-
-        In zero-shot mode, this just validates inputs and loads the pre-trained model.
-        No actual training occurs since TimesFM is a foundation model.
+        Validate inputs for zero-shot inference.
 
         Parameters
         ----------
         series : TimeSeries or List[TimeSeries]
-            Training time series. Must be univariate.
+            Validation series. Must be univariate.
         past_covariates : TimeSeries or List[TimeSeries], optional
-            Past covariates (not currently supported)
+            Not supported by TimesFM.
         future_covariates : TimeSeries or List[TimeSeries], optional
-            Future covariates (not currently supported)
+            Not supported by TimesFM.
+        **kwargs
+            Ignored.
 
         Returns
         -------
-        self : TimesFMModel
-            Fitted model instance
+        self
+            Validated model.
         """
-        super().fit(series, past_covariates, future_covariates)
+        # Validate series capabilities using base class method
+        self._validate_series_capabilities(series)
 
-        # Validate series
+        # Validate series length
         series_list = [series] if isinstance(series, TimeSeries) else series
-
         for s in series_list:
-            raise_if_not(
-                s.is_univariate,
-                "TimesFM only supports univariate series",
-                logger
-            )
-
             if len(s) < self.min_train_series_length:
                 logger.warning(
                     f"Series has length {len(s)}, which is less than minimum "
@@ -322,18 +346,43 @@ class TimesFMModel(GlobalForecastingModel):
         # Load pre-trained model
         self._load_model()
 
-        if self.zero_shot:
-            logger.info(
-                "Zero-shot mode: fit() validates inputs and loads pre-trained model. "
-                "No training/weight updates occur. Ready for immediate forecasting."
-            )
-        else:
-            raise NotImplementedError(
-                "Fine-tuning support coming in future version. "
-                "For now, use zero_shot=True"
-            )
+        logger.info("TimesFMModel ready for zero-shot forecasting")
 
         return self
+
+    def _apply_peft(self) -> None:
+        """
+        Apply PEFT configuration to the base model.
+
+        Raises
+        ------
+        NotImplementedError
+            PEFT fine-tuning not yet implemented for TimesFM.
+        """
+        raise NotImplementedError(
+            "TimesFM does not yet support PEFT fine-tuning. "
+            "Use zero_shot=True for zero-shot forecasting."
+        )
+
+    def _train_with_peft(
+        self,
+        series: Union[TimeSeries, List[TimeSeries]],
+        past_covariates: Optional[Union[TimeSeries, List[TimeSeries]]],
+        future_covariates: Optional[Union[TimeSeries, List[TimeSeries]]],
+        **kwargs
+    ) -> "TimesFMModel":
+        """
+        Train the PEFT adapters on the provided data.
+
+        Raises
+        ------
+        NotImplementedError
+            PEFT training not yet implemented for TimesFM.
+        """
+        raise NotImplementedError(
+            "TimesFM does not yet support PEFT training. "
+            "Use zero_shot=True for zero-shot forecasting."
+        )
 
     def predict(
         self,
@@ -384,17 +433,12 @@ class TimesFMModel(GlobalForecastingModel):
             logger.info("Loading model for zero-shot forecasting...")
             self._load_model()
 
+        # Validate series capabilities
+        self._validate_series_capabilities(series)
+
         # Prepare inputs
         is_single = isinstance(series, TimeSeries)
         series_list = [series] if is_single else series
-
-        # Validate all series are univariate
-        for s in series_list:
-            raise_if_not(
-                s.is_univariate,
-                "TimesFM only supports univariate series",
-                logger
-            )
 
         # Convert to numpy arrays (flatten to 1D)
         inputs = [s.values().flatten() for s in series_list]
@@ -476,5 +520,5 @@ class TimesFMModel(GlobalForecastingModel):
     def __str__(self):
         return (
             f"TimesFM(version={self.model_version}, size={self.model_size}, "
-            f"context={self.max_context_length}, device={self.device})"
+            f"context={self.context_length}, device={self.device})"
         )

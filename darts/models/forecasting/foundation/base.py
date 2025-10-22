@@ -135,10 +135,14 @@ class FoundationForecastingModel(GlobalForecastingModel):
         if self.lora_config is not None:
             logger.info("Applying PEFT configuration and fine-tuning model")
             self._apply_peft()
-            return self._train_with_peft(series, past_covariates, future_covariates, **kwargs)
+            result = self._train_with_peft(series, past_covariates, future_covariates, **kwargs)
         else:
             logger.info("Zero-shot mode: fit() validates inputs without training")
-            return self._zero_shot_fit(series, past_covariates, future_covariates, **kwargs)
+            result = self._zero_shot_fit(series, past_covariates, future_covariates, **kwargs)
+
+        # Mark model as fitted
+        self._fit_called = True
+        return result
 
     @abstractmethod
     def _apply_peft(self) -> None:
@@ -246,9 +250,9 @@ class FoundationForecastingModel(GlobalForecastingModel):
         AttributeError
             If capability identifiers are not set on the model class.
         """
-        if self._family_name is None or self._subfamily_name is None or self._variant_name is None:
+        if self._family_name is None or self._subfamily_name is None:
             raise AttributeError(
-                f"{self.__class__.__name__} must define _family_name, _subfamily_name, and _variant_name"
+                f"{self.__class__.__name__} must define _family_name and _subfamily_name"
             )
 
         variant_caps = get_variant(self._family_name, self._subfamily_name, self._variant_name)
@@ -269,9 +273,9 @@ class FoundationForecastingModel(GlobalForecastingModel):
         AttributeError
             If capability identifiers are not set on the model class.
         """
-        if self._family_name is None or self._subfamily_name is None or self._variant_name is None:
+        if self._family_name is None or self._subfamily_name is None:
             raise AttributeError(
-                f"{self.__class__.__name__} must define _family_name, _subfamily_name, and _variant_name"
+                f"{self.__class__.__name__} must define _family_name and _subfamily_name"
             )
 
         variant_caps = get_variant(self._family_name, self._subfamily_name, self._variant_name)
