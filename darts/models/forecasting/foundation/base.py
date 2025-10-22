@@ -14,6 +14,8 @@ from darts import TimeSeries
 from darts.logging import get_logger
 from darts.models.forecasting.forecasting_model import GlobalForecastingModel
 
+from .capabilities import get_variant
+
 logger = get_logger(__name__)
 
 
@@ -76,6 +78,11 @@ class FoundationForecastingModel(GlobalForecastingModel):
            ICLR 2022. https://arxiv.org/abs/2106.09685
     .. [2] Hugging Face PEFT library. https://huggingface.co/docs/peft
     """
+
+    # Capability identifiers - subclasses must override
+    _family_name: Optional[str] = None
+    _subfamily_name: Optional[str] = None
+    _variant_name: Optional[str] = None
 
     def __init__(self, lora_config: Optional[Dict] = None, **kwargs):
         """
@@ -223,3 +230,77 @@ class FoundationForecastingModel(GlobalForecastingModel):
             Validated model ready for prediction.
         """
         pass
+
+    @property
+    def supports_multivariate(self) -> bool:
+        """
+        Whether this model supports multivariate time series.
+
+        Returns
+        -------
+        bool
+            True if model can handle multivariate series, False otherwise.
+
+        Raises
+        ------
+        AttributeError
+            If capability identifiers are not set on the model class.
+        """
+        if self._family_name is None or self._subfamily_name is None or self._variant_name is None:
+            raise AttributeError(
+                f"{self.__class__.__name__} must define _family_name, _subfamily_name, and _variant_name"
+            )
+
+        variant_caps = get_variant(self._family_name, self._subfamily_name, self._variant_name)
+        return variant_caps["multivariate"]
+
+    @property
+    def supports_probabilistic(self) -> bool:
+        """
+        Whether this model supports probabilistic forecasting.
+
+        Returns
+        -------
+        bool
+            True if model can generate probabilistic forecasts, False otherwise.
+
+        Raises
+        ------
+        AttributeError
+            If capability identifiers are not set on the model class.
+        """
+        if self._family_name is None or self._subfamily_name is None or self._variant_name is None:
+            raise AttributeError(
+                f"{self.__class__.__name__} must define _family_name, _subfamily_name, and _variant_name"
+            )
+
+        variant_caps = get_variant(self._family_name, self._subfamily_name, self._variant_name)
+        return variant_caps["probabilistic"]
+
+    def _validate_series_capabilities(
+        self, series: Union[TimeSeries, List[TimeSeries]]
+    ) -> None:
+        """
+        Validate that input series matches model capabilities.
+
+        Parameters
+        ----------
+        series : TimeSeries or List[TimeSeries]
+            Input time series to validate.
+
+        Raises
+        ------
+        ValueError
+            If series capabilities exceed model capabilities (e.g., multivariate
+            series provided to univariate-only model).
+        """
+        # Handle list of series - check first one
+        check_series = series[0] if isinstance(series, list) else series
+
+        # Validate multivariate capability
+        if not self.supports_multivariate and check_series.width > 1:
+            raise ValueError(
+                f"{self.__class__.__name__} does not support multivariate time series. "
+                f"Input series has {check_series.width} components, but model only supports "
+                f"univariate series (1 component). Please provide a univariate series."
+            )

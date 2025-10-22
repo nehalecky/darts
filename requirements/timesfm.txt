@@ -1,1 +1,0 @@
-timesfm @ git+https://github.com/google-research/timesfm.git@main

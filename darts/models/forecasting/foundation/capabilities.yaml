@@ -1,0 +1,40 @@
+# Foundation Model Capabilities Registry
+# Hierarchical structure: family → subfamily → variants
+
+chronos:
+  description: "Amazon Chronos family of time series foundation models"
+  subfamilies:
+    chronos-2:
+      description: "Chronos 2.0 - Second generation with improved architecture"
+      variants:
+        base:
+          model_id: "amazon/chronos-2-base"
+          multivariate: false
+          probabilistic: true
+          context_length: 512
+          prediction_length: 64
+        small:
+          model_id: "amazon/chronos-2-small"
+          multivariate: false
+          probabilistic: true
+          context_length: 512
+          prediction_length: 64
+        large:
+          model_id: "amazon/chronos-2-large"
+          multivariate: false
+          probabilistic: true
+          context_length: 512
+          prediction_length: 64
+
+timesfm:
+  description: "Google TimesFM (Time Series Foundation Model)"
+  subfamilies:
+    timesfm-1:
+      description: "TimesFM 1.0 - First generation"
+      variants:
+        base:
+          model_id: "google/timesfm-1.0-200m"
+          multivariate: false
+          probabilistic: true
+          context_length: 512
+          prediction_length: 128
