@@ -11,9 +11,6 @@ Foundation models are pre-trained on massive datasets (100B+ time points) enabli
 Available Models
 ----------------
 - TimesFMModel : Google's decoder-only transformer (200M parameters)
-
-Planned Models
---------------
 - ChronosModel : Amazon's T5-based probabilistic forecaster (120M parameters)
 
 Base Classes
@@ -46,9 +43,22 @@ References
 """
 
 from darts.models.forecasting.foundation.base import FoundationForecastingModel
-from darts.models.forecasting.foundation.timesfm import TimesFMModel
+from darts.utils.utils import NotImportedModule
 
-__all__ = [
-    "FoundationForecastingModel",
-    "TimesFMModel",
-]
+__all__ = ["FoundationForecastingModel"]
+
+# Try to import ChronosModel (requires chronos-forecasting at usage time, not import time)
+try:
+    from darts.models.forecasting.foundation.chronos import ChronosModel
+
+    __all__.append("ChronosModel")
+except ImportError:
+    ChronosModel = NotImportedModule(module_name="chronos-forecasting", warn=False)
+
+# Try to import TimesFMModel (requires torch at import time)
+try:
+    from darts.models.forecasting.foundation.timesfm import TimesFMModel
+
+    __all__.append("TimesFMModel")
+except ImportError:
+    TimesFMModel = NotImportedModule(module_name="torch", warn=False)

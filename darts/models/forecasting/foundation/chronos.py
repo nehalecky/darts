@@ -40,66 +40,192 @@ def _check_chronos_available():
             "Or with pip:\n"
             "  pip install 'darts[chronos]'\n"
             "\n"
-            "This will install chronos-forecasting>=2.0.0 from PyPI."
+            "This will install chronos-forecasting>=2.0.0 from PyPI.\n"
+            "See INSTALL.md for more details."
         ) from e
 
 
 def _timeseries_to_chronos_df(
     series: Union[TimeSeries, List[TimeSeries]],
-    series_id_prefix: str = "series"
+    past_covariates: Optional[Union[TimeSeries, List[TimeSeries]]] = None,
+    future_covariates: Optional[Union[TimeSeries, List[TimeSeries]]] = None,
+    series_id_prefix: str = "series",
+    is_future_df: bool = False
 ) -> pd.DataFrame:
     """
-    Convert Darts TimeSeries to Chronos DataFrame format.
+    Convert Darts TimeSeries to Chronos DataFrame format with covariate support.
 
     Chronos expects:
     - id column: identifies different time series
     - timestamp column: datetime information
     - target column(s): values to predict (univariate or multivariate)
+    - covariate columns: past/future external variables
 
     Parameters
     ----------
     series : TimeSeries or List[TimeSeries]
-        Input time series
+        Input time series (omit for future_df)
+    past_covariates : TimeSeries or List[TimeSeries], optional
+        Past covariates to include in context_df
+    future_covariates : TimeSeries or List[TimeSeries], optional
+        Future covariates to include in both context_df and future_df
     series_id_prefix : str, default="series"
         Prefix for series IDs
+    is_future_df : bool, default=False
+        If True, create future_df format (no target columns, only covariates)
 
     Returns
     -------
     pd.DataFrame
-        DataFrame with columns: [id, timestamp, target] or [id, timestamp, target_0, target_1, ...]
+        DataFrame with columns: [id, timestamp, target(s), covariate columns]
     """
-    # Normalize to list
-    if not isinstance(series, list):
-        series_list = [series]
-    else:
-        series_list = series
+    # Normalize to lists
+    series_list = [series] if isinstance(series, TimeSeries) else series if series else []
+    past_cov_list = [past_covariates] if isinstance(past_covariates, TimeSeries) else past_covariates if past_covariates else []
+    future_cov_list = [future_covariates] if isinstance(future_covariates, TimeSeries) else future_covariates if future_covariates else []
+
+    # Determine number of series
+    n_series = max(len(series_list), len(past_cov_list), len(future_cov_list))
+
+    # Broadcast single-element lists
+    if series_list and len(series_list) == 1 and n_series > 1:
+        series_list = series_list * n_series
+    if past_cov_list and len(past_cov_list) == 1 and n_series > 1:
+        past_cov_list = past_cov_list * n_series
+    if future_cov_list and len(future_cov_list) == 1 and n_series > 1:
+        future_cov_list = future_cov_list * n_series
 
     dfs = []
-    for idx, ts in enumerate(series_list):
-        # Get DataFrame from TimeSeries (using narwhals-based to_dataframe)
-        # Get with time as column (not index) for easier manipulation
-        ts_df = ts.to_dataframe(time_as_index=False)
+    for idx in range(n_series):
+        # Start with ID
+        row_data = {"id": f"{series_id_prefix}_{idx}"}
 
-        # Add series ID as first column
-        ts_df.insert(0, "id", f"{series_id_prefix}_{idx}")
+        # Add target series if not future_df
+        if not is_future_df and series_list:
+            ts = series_list[idx]
+            ts_df = ts.to_dataframe(time_as_index=False)
 
-        # Rename time column to "timestamp"
-        # The time column is the second column (index 1) after inserting id
-        time_col_name = ts_df.columns[1]
-        ts_df = ts_df.rename(columns={time_col_name: "timestamp"})
+            # Extract timestamp
+            time_col_name = ts_df.columns[0]
+            ts_df = ts_df.rename(columns={time_col_name: "timestamp"})
 
-        # Rename value columns to "target" (univariate) or "target_0", "target_1", ... (multivariate)
-        value_cols = [col for col in ts_df.columns if col not in ["id", "timestamp"]]
-        if len(value_cols) == 1:
-            ts_df = ts_df.rename(columns={value_cols[0]: "target"})
+            # Rename value columns to target/target_0/target_1...
+            value_cols = [col for col in ts_df.columns if col != "timestamp"]
+            if len(value_cols) == 1:
+                ts_df = ts_df.rename(columns={value_cols[0]: "target"})
+            else:
+                rename_map = {old: f"target_{i}" for i, old in enumerate(value_cols)}
+                ts_df = ts_df.rename(columns=rename_map)
+
+            # Merge into result
+            result_df = ts_df.copy()
+            result_df.insert(0, "id", row_data["id"])
         else:
-            # Multivariate: target_0, target_1, ...
-            rename_map = {old: f"target_{i}" for i, old in enumerate(value_cols)}
-            ts_df = ts_df.rename(columns=rename_map)
+            # For future_df, create empty timestamp placeholder
+            result_df = pd.DataFrame(row_data, index=[0])
 
-        dfs.append(ts_df)
+        # Add past covariates (only in context_df, not future_df)
+        if not is_future_df and past_cov_list and idx < len(past_cov_list):
+            past_cov = past_cov_list[idx]
+            past_df = past_cov.to_dataframe(time_as_index=True)
+            # Prefix columns to avoid conflicts
+            past_df.columns = [f"past_cov_{col}" for col in past_df.columns]
+            # Merge on timestamp
+            if "timestamp" in result_df.columns:
+                result_df = result_df.merge(past_df, left_on="timestamp", right_index=True, how="left")
+
+        # Add future covariates (in both context_df and future_df)
+        if future_cov_list and idx < len(future_cov_list):
+            future_cov = future_cov_list[idx]
+            future_df = future_cov.to_dataframe(time_as_index=True)
+            # Keep original column names (shared between context and future)
+            if "timestamp" in result_df.columns:
+                result_df = result_df.merge(future_df, left_on="timestamp", right_index=True, how="left")
+
+        dfs.append(result_df)
 
     # Concatenate all series
+    return pd.concat(dfs, ignore_index=True)
+
+
+def _create_future_df(
+    series: Union[TimeSeries, List[TimeSeries]],
+    future_covariates: Optional[Union[TimeSeries, List[TimeSeries]]],
+    n: int,
+    series_id_prefix: str = "series"
+) -> Optional[pd.DataFrame]:
+    """
+    Create future DataFrame for Chronos with future covariate values.
+
+    Generates future timestamps based on series frequency and extracts
+    the corresponding future covariate values for the forecast horizon.
+
+    Parameters
+    ----------
+    series : TimeSeries or List[TimeSeries]
+        Target series (used for timestamp generation and frequency)
+    future_covariates : TimeSeries, List[TimeSeries], or None
+        Future covariates to include in the future DataFrame
+    n : int
+        Forecast horizon (number of future steps)
+    series_id_prefix : str, default="series"
+        Prefix for series IDs in the DataFrame
+
+    Returns
+    -------
+    pd.DataFrame or None
+        Future DataFrame with columns [id, timestamp, covariate_columns]
+        Returns None if future_covariates is None
+    """
+    if future_covariates is None:
+        return None
+
+    # Normalize inputs to lists
+    was_single_series = not isinstance(series, list)
+    series_list = [series] if was_single_series else series
+
+    was_single_cov = not isinstance(future_covariates, list)
+    cov_list = [future_covariates] if was_single_cov else future_covariates
+
+    # Broadcast single covariate to all series
+    if len(cov_list) == 1 and len(series_list) > 1:
+        cov_list = cov_list * len(series_list)
+
+    dfs = []
+    for idx, (ts, future_cov) in enumerate(zip(series_list, cov_list)):
+        series_id = f"{series_id_prefix}_{idx}"
+
+        # Generate future timestamps based on series frequency
+        last_timestamp = ts.end_time()
+        freq = ts.freq
+        future_timestamps = pd.date_range(
+            start=last_timestamp + freq,
+            periods=n,
+            freq=freq
+        )
+
+        # Create base DataFrame with id and timestamp
+        future_df = pd.DataFrame({
+            "id": series_id,
+            "timestamp": future_timestamps
+        })
+
+        # Extract future covariate values for forecast horizon
+        future_cov_df = future_cov.to_dataframe(time_as_index=True)
+
+        # Filter to the forecast horizon timeframe
+        future_cov_df = future_cov_df.loc[future_timestamps]
+
+        # Merge covariates with future DataFrame
+        future_df = future_df.merge(
+            future_cov_df,
+            left_on="timestamp",
+            right_index=True,
+            how="left"
+        )
+
+        dfs.append(future_df)
+
     return pd.concat(dfs, ignore_index=True)
 
 
@@ -344,9 +470,11 @@ class ChronosModel(FoundationForecastingModel):
         series : TimeSeries or List[TimeSeries]
             Validation series.
         past_covariates : TimeSeries or List[TimeSeries], optional
-            Not supported by Chronos.
+            Past-observed covariates that will be used during prediction.
+            Chronos 2 natively supports incorporating past covariates for forecasting.
         future_covariates : TimeSeries or List[TimeSeries], optional
-            Not supported by Chronos.
+            Future-known covariates that will be used during prediction.
+            Chronos 2 natively supports incorporating future covariates for forecasting.
         **kwargs
             Ignored.
 
@@ -355,7 +483,15 @@ class ChronosModel(FoundationForecastingModel):
         self
             Validated model.
         """
-        # Validate series capabilities
+        # Layer 1: Validate model capabilities (base class)
+        # Use hardcoded registry key since ChronosModel uses custom S3 path
+        self._validate_capability_support(
+            model_id="chronos-2-base",
+            past_covariates=past_covariates,
+            future_covariates=future_covariates,
+        )
+
+        # Layer 2: Validate series capabilities (model-specific, already implemented)
         self._validate_series_capabilities(series)
 
         logger.info("ChronosModel ready for zero-shot forecasting")
@@ -374,7 +510,9 @@ class ChronosModel(FoundationForecastingModel):
 
         For Chronos 2:
         - Can use up to context_length historical points
-        - No covariates support
+        - Supports both past and future covariates
+        - Past covariates share the same context window as the target series
+        - Future covariates must extend at least to the forecast horizon (validated at predict() time)
         - No output chunk shift
 
         Returns
@@ -386,10 +524,10 @@ class ChronosModel(FoundationForecastingModel):
         return (
             -self.context_length,  # min_target_lag: lookback window
             0,                      # max_target_lag: no future target values
-            None,                   # min_past_cov_lag: no past covariates
-            None,                   # max_past_cov_lag
-            None,                   # min_future_cov_lag: no future covariates
-            None,                   # max_future_cov_lag
+            -self.context_length,  # min_past_cov_lag: same lookback as target
+            0,                      # max_past_cov_lag: up to present
+            0,                      # min_future_cov_lag: from present onward
+            self.context_length,   # max_future_cov_lag: at least context_length (extendable to forecast horizon at predict() time)
             0,                      # output_chunk_shift: no shift
         )
 
@@ -403,9 +541,9 @@ class ChronosModel(FoundationForecastingModel):
     def _model_encoder_settings(self) -> tuple:
         """
         Returns encoder settings.
-        Chronos 2 doesn't use covariates.
+        Chronos 2 supports both past and future covariates.
         """
-        return 0, 0, False, False
+        return -1, -1, True, True  # -1 = unlimited, both covariate types supported
 
     def _apply_peft(self) -> None:
         """
@@ -445,11 +583,17 @@ class ChronosModel(FoundationForecastingModel):
         self,
         n: int,
         series: Optional[Union[TimeSeries, List[TimeSeries]]] = None,
+        past_covariates: Optional[Union[TimeSeries, List[TimeSeries]]] = None,
+        future_covariates: Optional[Union[TimeSeries, List[TimeSeries]]] = None,
         num_samples: int = 1,
+        quantile_levels: Optional[List[float]] = None,
         **kwargs
     ) -> Union[TimeSeries, List[TimeSeries]]:
         """
-        Generate forecasts using Chronos 2.
+        Generate forecasts using Chronos 2 with optional covariate support.
+
+        Chronos 2 natively supports both past and future covariates, enabling
+        exogenous variable integration for improved forecasting accuracy.
 
         Parameters
         ----------
@@ -457,10 +601,20 @@ class ChronosModel(FoundationForecastingModel):
             Number of time steps to forecast.
         series : TimeSeries or List[TimeSeries], optional
             Input series for context. Required for zero-shot usage.
+        past_covariates : TimeSeries or List[TimeSeries], optional
+            Past covariates to condition the forecast on.
+            These are exogenous variables observed in the historical context.
+        future_covariates : TimeSeries or List[TimeSeries], optional
+            Future covariates known in advance for the forecast horizon.
+            These must extend at least n steps beyond the end of series.
         num_samples : int, default=1
             Number of probabilistic samples to generate.
             When num_samples=1, returns point forecast (median).
             When num_samples>1, returns probabilistic forecast.
+        quantile_levels : List[float], optional
+            Specific quantile levels to predict. If None, defaults to 9 quantiles
+            [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] for probabilistic forecasts
+            or [0.5] for point forecasts. Chronos 2 supports up to 21 quantiles.
         **kwargs
             Additional prediction parameters.
 
@@ -477,9 +631,23 @@ class ChronosModel(FoundationForecastingModel):
         Examples
         --------
         >>> model = ChronosModel()
+        >>> # Basic forecast
         >>> forecast = model.predict(n=24, series=train_series)
         >>> # Probabilistic forecast
         >>> prob_forecast = model.predict(n=24, series=train_series, num_samples=100)
+        >>> # Forecast with covariates
+        >>> forecast = model.predict(
+        ...     n=24,
+        ...     series=train_series,
+        ...     past_covariates=past_cov,
+        ...     future_covariates=future_cov
+        ... )
+        >>> # Custom quantile levels
+        >>> forecast = model.predict(
+        ...     n=24,
+        ...     series=train_series,
+        ...     quantile_levels=[0.1, 0.5, 0.9]
+        ... )
         """
         # Validate inputs
         raise_if_not(
@@ -487,17 +655,21 @@ class ChronosModel(FoundationForecastingModel):
             "series is required for zero-shot forecasting with ChronosModel"
         )
 
-        # Convert Darts TimeSeries to Chronos DataFrame format
+        # Convert Darts TimeSeries to Chronos DataFrame format with covariates
         logger.debug("Converting TimeSeries to Chronos DataFrame format...")
-        context_df = _timeseries_to_chronos_df(series)
+        context_df = _timeseries_to_chronos_df(series, past_covariates, future_covariates)
+
+        # Create future DataFrame with future covariates if provided
+        future_df = _create_future_df(series, future_covariates, n)
 
         # Determine quantile levels for probabilistic forecasting
-        if num_samples > 1:
-            # Generate multiple quantiles for probabilistic forecast
-            quantile_levels = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-        else:
-            # Just get the median for point forecast
-            quantile_levels = [0.5]
+        if quantile_levels is None:
+            if num_samples > 1:
+                # Generate multiple quantiles for probabilistic forecast
+                quantile_levels = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+            else:
+                # Just get the median for point forecast
+                quantile_levels = [0.5]
 
         # Call Chronos2Pipeline.predict_df()
         logger.debug(f"Calling Chronos2Pipeline.predict_df(prediction_length={n}, quantile_levels={quantile_levels})...")
@@ -505,6 +677,7 @@ class ChronosModel(FoundationForecastingModel):
             context_df,
             prediction_length=n,
             quantile_levels=quantile_levels,
+            future_df=future_df,
             id_column="id",
             timestamp_column="timestamp",
             target="target" if context_df.columns.tolist().count("target") == 1 else None

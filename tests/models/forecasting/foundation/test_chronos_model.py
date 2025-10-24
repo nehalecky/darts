@@ -63,3 +63,57 @@ def test_chronos_model_has_lazy_import_check():
         "Should include installation instructions"
     assert "darts[chronos]" in source, \
         "Should mention darts[chronos] extra"
+
+
+def test_chronos_model_has_two_layer_validation():
+    """Verify ChronosModel implements two-layer validation architecture."""
+    chronos_path = (
+        Path(__file__).parents[4]
+        / "darts"
+        / "models"
+        / "forecasting"
+        / "foundation"
+        / "chronos.py"
+    )
+
+    with open(chronos_path, "r") as f:
+        source = f.read()
+
+    # Check for Layer 1 validation call (capability support from registry)
+    assert "_validate_capability_support" in source, \
+        "Should call _validate_capability_support() for capability validation"
+
+    # Check for Layer 2 validation call (series capabilities)
+    assert "_validate_series_capabilities" in source, \
+        "Should call _validate_series_capabilities() for series validation"
+
+    # Verify validation happens in _zero_shot_fit
+    assert "def _zero_shot_fit" in source, \
+        "Should implement _zero_shot_fit method"
+
+
+def test_base_class_has_capability_validation():
+    """Verify FoundationForecastingModel base class has capability validation method."""
+    base_path = (
+        Path(__file__).parents[4]
+        / "darts"
+        / "models"
+        / "forecasting"
+        / "foundation"
+        / "base.py"
+    )
+
+    with open(base_path, "r") as f:
+        source = f.read()
+
+    # Check for capability validation method
+    assert "def _validate_capability_support" in source, \
+        "Base class should define _validate_capability_support() method"
+
+    # Check for registry import
+    assert "from .registry import get_model_spec" in source, \
+        "Base class should import get_model_spec from registry"
+
+    # Check for capability checks
+    assert "past_covariates" in source and "future_covariates" in source, \
+        "Should check for covariate capabilities"

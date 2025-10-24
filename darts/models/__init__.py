@@ -131,17 +131,9 @@ except ImportError:
     XGBModel = NotImportedModule(module_name="XGBoost")
     XGBClassifierModel = NotImportedModule(module_name="XGBoost")
 
-try:
-    from darts.models.forecasting.foundation import TimesFMModel
-except ImportError:
-    logger.warning(
-        "The TimesFM module could not be imported. "
-        "To enable support for TimesFM foundation model, "
-        "install it from source: "
-        "git clone https://github.com/google-research/timesfm.git && "
-        "cd timesfm && pip install -e .[torch]"
-    )
-    TimesFMModel = NotImportedModule(module_name="TimesFM", warn=False)
+# Foundation models are imported with independent try/except in foundation/__init__.py
+# This ensures one model's missing dependencies don't break others
+from darts.models.forecasting.foundation import ChronosModel, TimesFMModel
 
 # Filtering
 from darts.models.filtering.gaussian_process_filter import GaussianProcessFilter
@@ -182,6 +174,7 @@ __all__ = [
     "TCNModel",
     "TFTModel",
     "TiDEModel",
+    "ChronosModel",
     "TimesFMModel",
     "TransformerModel",
     "TSMixerModel",

@@ -20,6 +20,87 @@ The spectrum of foundation model usage includes:
 
 This pre-training paradigm fundamentally changes the forecasting workflow. Instead of the traditional "fit-then-predict" approach, you can now "predict immediately" with competitive accuracy, making foundation models ideal for cold-start scenarios, rapid prototyping, and situations with limited historical data.
 
+## Model Comparison: TimesFM vs Chronos 2 vs Traditional
+
+Choosing the right forecasting approach depends on your specific requirements. Here's a comprehensive comparison:
+
+| **Feature** | **TimesFM 2.5** | **Chronos 2** | **Traditional Models** |
+|------------|-----------------|---------------|------------------------|
+| **Training Required** | ❌ Zero-shot only | ❌ Zero-shot only | ✅ Always required |
+| **Probabilistic Forecasts** | ✅ Yes (100 samples) | ✅ Yes (unlimited samples) | ⚠️ Depends on model |
+| **Uncertainty Quantification** | ✅ Confidence intervals | ✅ Full quantile forecasts | ⚠️ Limited |
+| **Context Length** | 512-16K points (patch: 32) | 512-8K points (patch: 16) | Model-dependent |
+| **Max Forecast Horizon** | 256 steps | 1024 steps | Unlimited |
+| **Multivariate Support** | ❌ Univariate only | ✅ Yes (multivariate) | ✅ Many models |
+| **Covariates Support** | ❌ Not supported | ✅ Past & Future covariates | ✅ Widely supported |
+| **Model Size** | 200M parameters | 120M (base), 710M (large) | Varies widely |
+| **Inference Speed** | ⚡ Fast (decoder-only) | 🐢 Moderate (encoder-decoder) | ⚡⚡ Very fast |
+| **Memory Usage** | ~2GB GPU/RAM | ~1.5GB GPU/RAM | <100MB |
+| **Best For** | Quick prototyping, hourly/daily data | Complex forecasting with external signals | Explainability, domain knowledge |
+| **Architecture** | Decoder-only transformer | T5-based encoder-decoder | Statistical/ML |
+| **Pre-training Data** | 100B+ time points | Diverse time series corpus | None (fit from scratch) |
+| **Typical Use Case** | Cold-start, batch forecasting | Multi-factor forecasting, uncertainty | Production with domain expertise |
+
+### Performance Characteristics
+
+From comprehensive benchmarking across diverse datasets (Air Passengers, Energy Load, Taylor Electricity):
+
+**TimesFM 2.5:**
+- Excels on hourly/daily frequency data with clear patterns
+- Fast inference makes it ideal for real-time applications
+- Strong performance on structured seasonality
+- Context window optimization critical for performance
+
+**Chronos 2:**
+- Superior uncertainty quantification with probabilistic forecasts
+- Better handling of irregular patterns and spikes
+- Robust across diverse data characteristics
+- Slightly slower but more comprehensive uncertainty estimates
+
+**Traditional Models (e.g., Exponential Smoothing):**
+- Competitive on simple seasonal patterns
+- Fastest inference (milliseconds vs seconds)
+- Full explainability and interpretability
+- Require careful hyperparameter tuning
+
+### Decision Guide: Which Model Should I Use?
+
+**Use TimesFM 2.5 when:**
+- ⚡ Need fast inference (production real-time forecasting)
+- 📊 Working with hourly/daily frequency data
+- 🚀 Cold-start scenarios (new products/services)
+- 💻 Limited computational resources
+- 🎯 Point forecasts sufficient (though probabilistic available)
+
+**Use Chronos 2 when:**
+- 📈 Need uncertainty quantification (confidence intervals critical)
+- ⚠️ Risk assessment and decision making under uncertainty
+- 📉 Handling irregular patterns, spikes, stochastic behavior
+- 🔮 Longer forecast horizons (up to 1024 steps)
+- 🎲 Probabilistic forecasts drive business decisions
+- 🔗 Need to incorporate external signals (past/future covariates)
+- 📊 Working with multivariate time series
+
+**Use Traditional Models when:**
+- 🔍 Explainability is mandatory (regulatory/business requirements)
+- 🧠 Domain expertise can be encoded (business rules, constraints)
+- 📚 Extensive historical data with strong local patterns
+- ⚙️ Custom seasonal patterns or business calendars
+- 🏃 Extremely low latency required (<10ms)
+
+**Use Ensemble Approaches when:**
+- 🎯 Maximum accuracy required (combine foundation + traditional)
+- 🔀 Diverse data characteristics across many series
+- 💪 Robust to distribution shifts and outliers
+- 🧪 Experimentation with multiple methodologies
+
+**Quick Start Recommendation:**
+1. **Start with foundation models** (TimesFM or Chronos 2) for immediate baselines - no tuning required
+2. **Add traditional models** if domain knowledge available or explainability needed
+3. **Ensemble both** for production if accuracy is critical
+
+See **[Foundation Models Comparison Tutorial](../../examples/28-Foundation-Models-Tutorial.ipynb)** for hands-on examples across multiple datasets.
+
 ## The Semantic Intelligence: Understanding Examples vs Covariates
 
 One of the most powerful capabilities of TSFMs is their ability to distinguish between fundamentally different types of information: **temporal causality** (covariates) versus **pattern templates** (examples). This semantic intelligence mirrors how humans naturally separate "what affects my target" from "what my target resembles."
@@ -68,28 +149,27 @@ Foundation models break the fundamental contract of Darts' `ForecastingModel` ba
 >
 > This "compatibility-first" design means you can use TimesFM anywhere you'd use a traditional Darts model, but with the added superpower of zero-shot forecasting.
 
-### The fit() Method: Validation, Not Training
+### The fit() Method: Required for API Consistency
 
-> **Why does TimesFM have a `fit()` method if it doesn't train?**
+> **Why must I call `fit()` even though zero-shot models don't train?**
 >
-> For API compatibility and input validation:
-> - **Validation**: Checks series are univariate, lengths are sufficient
-> - **Model loading**: Loads the pre-trained checkpoint (if not already loaded)
-> - **No training**: Pre-trained weights remain frozen—no gradient updates
-> - **Darts utilities**: Some tools (like `historical_forecasts`) require calling `fit()` before `predict()`
+> Darts enforces a **consistent API contract** across ALL models for safety and usability:
 >
-> You can also use true zero-shot: call `predict()` directly without `fit()`, and the model will lazy-load automatically.
-
-### Lazy Loading Pattern
-
-> **How does zero-shot prediction without fit() work?**
+> **Purpose of `fit()` for zero-shot models:**
+> - **Input validation**: Checks series are univariate (Chronos 2), lengths are sufficient
+> - **Capability validation**: Ensures data is compatible (no covariates for models that don't support them)
+> - **State initialization**: Sets internal `_fit_called` flag that `predict()` and `historical_forecasts()` check
+> - **No training**: Pre-trained weights remain frozen—no gradient updates occur
 >
-> TimesFM implements **lazy model loading**: when you call `predict()` without first calling `fit()`, the model automatically loads the pre-trained checkpoint on first use. This enables the most direct forecasting workflow:
->
+> **Required workflow:**
 > ```python
-> model = TimesFMModel()
-> forecast = model.predict(n=12, series=my_series)  # No fit() needed!
+> model = ChronosModel()
+> model.fit(train_series)  # Required: validates inputs and initializes state
+> forecast = model.predict(n=24)  # Predicts continuation of train_series
+> forecast = model.predict(n=12, series=other_series)  # Zero-shot on different series!
 > ```
+>
+> After the initial `fit()` call, the model is ready for zero-shot predictions on ANY compatible series.
 >
 > The model downloads once, then caches for subsequent predictions. This is the foundation model paradigm—immediate utility with no configuration.
 
@@ -179,13 +259,18 @@ Longer context can capture more complex patterns but increases computation time.
 
 ### Current Limitations
 
-TimesFM currently supports:
+TimesFM's decoder-only architecture has specific constraints:
 - **Univariate forecasting only**: Forecasts one time series at a time (no cross-series dependencies)
-- **Zero-shot inference**: No training or fine-tuning (uses pre-trained weights as-is)
-- **200M parameter model**: TimesFM 2.5 from HuggingFace
-- **No covariates**: External variables not supported
+- **No covariate support**: Cannot incorporate external variables (weather, promotions, etc.)
+- **Shorter context window**: 512 time steps (vs 8192 for Chronos 2)
+- **Zero-shot only**: No training or fine-tuning (uses pre-trained weights as-is)
 
-Despite these limitations, TimesFM often outperforms traditional models without any training, making it valuable for rapid prototyping and cold-start scenarios.
+**When these limitations matter:**
+- If you need **covariates** → Use **Chronos 2** instead
+- If you need **multivariate forecasting** → Use **Chronos 2** instead
+- If you need **long context** (>512 steps) → Use **Chronos 2** instead
+
+Despite these constraints, TimesFM offers faster inference and often outperforms traditional models without any training, making it valuable for rapid prototyping and cold-start scenarios with univariate data.
 
 ## Using Chronos 2 (Amazon's Foundation Model)
 
@@ -257,14 +342,204 @@ The probabilistic nature makes Chronos 2 particularly valuable for:
 - **Anomaly detection**: Values outside intervals may be unusual
 - **Uncertainty quantification**: Know when forecasts are less reliable
 
+### Using Covariates with Chronos 2
+
+Chronos 2 natively supports **covariates**—external variables that provide additional context for forecasting. This is a powerful capability that distinguishes Chronos 2 from TimesFM and many other foundation models.
+
+#### Understanding Covariate Types
+
+**Past Covariates (Historical Context):**
+- Historical information known up to the forecast point
+- Examples: temperature history, past promotions, historical events
+- Used to understand how external factors influenced the target series in the past
+
+**Future Covariates (Known Future Information):**
+- Information known for future time steps
+- Examples: planned promotions, holiday calendar, weather forecasts, scheduled events
+- Used to inform predictions about future conditions
+
+#### Covariate Usage Examples
+
+**Using past covariates:**
+```python
+from darts.models import ChronosModel
+from darts import TimeSeries
+import pandas as pd
+
+# Load your time series and historical context
+series = TimeSeries.from_dataframe(sales_df, value_cols=['sales'])
+weather_history = TimeSeries.from_dataframe(weather_df, value_cols=['temperature'])
+
+# Create model and fit with past covariates
+model = ChronosModel(model_id="amazon/chronos-2-base")
+model.fit(series, past_covariates=weather_history)
+
+# Predict using past covariates
+forecast = model.predict(
+    n=24,
+    series=series,
+    past_covariates=weather_history
+)
+```
+
+**Using future covariates:**
+```python
+# Future information like planned promotions or holiday calendar
+future_promotions = TimeSeries.from_dataframe(
+    promotions_df,
+    value_cols=['promotion_intensity']
+)
+
+# Predict with future covariates
+forecast = model.predict(
+    n=24,
+    series=series,
+    future_covariates=future_promotions
+)
+```
+
+**Using both past and future covariates:**
+```python
+# Combine historical context with known future information
+forecast = model.predict(
+    n=24,
+    series=series,
+    past_covariates=weather_history,
+    future_covariates=future_promotions
+)
+```
+
+**Multiple covariates:**
+```python
+# Stack multiple covariate series
+from darts import concatenate
+
+# Combine multiple past covariates
+past_covs = concatenate([
+    weather_history,
+    economic_indicators,
+    competitor_prices
+], axis=1)  # Stack horizontally (multiple columns)
+
+# Combine multiple future covariates
+future_covs = concatenate([
+    future_promotions,
+    holiday_calendar,
+    planned_events
+], axis=1)
+
+# Predict with multiple covariates
+forecast = model.predict(
+    n=24,
+    series=series,
+    past_covariates=past_covs,
+    future_covariates=future_covs
+)
+```
+
+#### Validation and Troubleshooting
+
+**Covariate length requirements:**
+- Past covariates must extend to the last point of the target series
+- Future covariates must extend at least `n` steps beyond the target series
+
+**Common errors:**
+
+```python
+# Error: future covariates too short
+forecast = model.predict(n=24, series=series, future_covariates=short_cov)
+# ValueError: future_covariates must extend at least 24 steps beyond series
+
+# Error: past covariates don't reach series end
+forecast = model.predict(n=24, series=series, past_covariates=incomplete_history)
+# ValueError: past_covariates must extend to the last point of series
+```
+
+**Tip:** Use `len(series)` and `series.end_time()` to verify covariate alignment before prediction.
+
+#### Covariate Best Practices
+
+**1. Temporal Alignment:**
+- Past covariates must align with the target series history
+- Future covariates must extend at least `n` steps beyond the last target value
+
+**2. Choosing Covariate Types:**
+- Use **past covariates** for variables you can't predict (e.g., actual weather, competitor actions)
+- Use **future covariates** for variables you know in advance (e.g., calendar events, your own plans)
+
+**3. Feature Engineering:**
+- Normalize covariates to similar scales as your target series
+- Consider lagged features for past covariates
+- Include cyclical encodings for periodic patterns (day of week, month of year)
+
+**4. Validation:**
+- Always verify covariate lengths match requirements
+- Test forecasts with and without covariates to measure impact
+- Monitor for data leakage (future information in past covariates)
+
+## Foundation Model Capabilities Matrix
+
+This comprehensive comparison shows the native capabilities of each foundation model family. All information is sourced from the model registry (see `darts/models/forecasting/foundation/registry.yaml`).
+
+### Core Capabilities
+
+| Model | Parameters | Context Window | Max Horizon | Univariate | Multivariate | Past Covariates | Future Covariates | Probabilistic | Quantiles |
+|-------|------------|----------------|-------------|------------|--------------|-----------------|-------------------|---------------|-----------|
+| **Chronos 2 Base** | 120M | 8192 | 1024 | ✅ | ✅ | ✅ | ✅ | ✅ | 21 |
+| **Chronos 2 Large** | 710M | 8192 | 1024 | ✅ | ✅ | ✅ | ✅ | ✅ | 21 |
+| **TimesFM 2.5** | 200M | 512 | — | ✅ | ❌ | ❌ | ❌ | ✅ | 10 |
+
+### Capability Legend
+
+- ✅ **Natively Supported**: The model architecture includes native support for this capability
+- ❌ **Not Supported**: The model cannot use this type of information
+- **Context Window**: Maximum number of historical time steps the model can process
+- **Max Horizon**: Maximum number of steps the model can forecast ahead (— = no documented limit)
+- **Quantiles**: Number of quantile levels available for probabilistic forecasting
+
+### Quantile Support Details
+
+**Chronos 2 (21 quantiles):**
+- Default: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+- Full range: [0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99]
+- Use case: Detailed uncertainty quantification with tail risk assessment
+
+**TimesFM 2.5 (10 quantiles):**
+- Available: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+- Use case: Standard confidence intervals with faster inference
+
+### Architecture Implications
+
+**Chronos 2 (Encoder-Decoder):**
+- T5-based architecture enables processing of both target series and covariates
+- Encoder processes historical context (series + past covariates)
+- Decoder generates future predictions (conditioned on future covariates)
+- Result: Native support for multivariate and covariate-based forecasting
+
+**TimesFM (Decoder-Only):**
+- Streamlined architecture optimized for univariate patterns
+- No encoder means no mechanism for processing auxiliary information
+- Result: Faster inference but limited to univariate time series only
+
+### Choosing Based on Capabilities
+
+**Need covariates or multivariate?** → Use **Chronos 2** (only foundation model with native support)
+
+**Univariate forecasting only?** → Consider **TimesFM** for faster inference or **Chronos 2** for better uncertainty quantification
+
+**Maximum context needed?** → Use **Chronos 2** (8192 vs 512 time steps)
+
+**Fastest inference?** → Use **TimesFM** (decoder-only is ~2-3x faster than encoder-decoder)
+
 ### Key Capabilities
 
-Chronos 2 currently supports:
-- **Univariate forecasting only**: Forecasts one time series at a time
+Chronos 2 supports:
+- **Univariate and multivariate forecasting**: Forecast single or multiple related time series
 - **Zero-shot inference**: No training required (uses pre-trained weights)
-- **Probabilistic forecasts**: Quantile-based uncertainty estimates
-- **Context length**: 512 time steps for historical context
-- **No covariates**: External variables not supported in current version
+- **Probabilistic forecasts**: Quantile-based uncertainty estimates with 21 quantiles
+- **Covariate support**: Both past covariates (historical context) and future covariates (known future information)
+- **Context length**: Up to 8192 time steps for historical context
+- **Long forecast horizons**: Up to 1024 steps ahead
 
 ### When to Use Chronos 2
 
@@ -274,18 +549,21 @@ Chronos 2 currently supports:
 - Cold-start scenarios (new products/services)
 - Batch forecasting thousands of diverse series
 - Quick prototyping without hyperparameter tuning
+- **Incorporating external signals** (covariates for weather, promotions, events)
+- **Multivariate forecasting** with cross-series dependencies
 
 **Consider traditional models when:**
-- You need multivariate cross-dependencies (coming in future versions)
 - Domain expertise can be encoded (business rules)
 - Explainability is critical
 - You have extensive historical data with strong local patterns
+- Extremely low latency required (<10ms inference time)
 
 ## Learn More
 
 **Tutorial Notebooks:**
 - **[TimesFM Tutorial](../../examples/25-TimesFM-foundation-model.ipynb)** - Google's TimesFM with zero-shot forecasting
 - **[Chronos 2 Tutorial](../../examples/26-Chronos-foundation-model.ipynb)** - Amazon's Chronos with probabilistic forecasts
+- **[Foundation Models Comparison](../../examples/28-Foundation-Models-Tutorial.ipynb)** - Comprehensive comparison across TimesFM 2.5, Chronos 2, and traditional models on diverse datasets (Air Passengers, Energy Load, Taylor Electricity)
 
 **GitHub Issues & Tracking:**
 - **[Issue #2359](https://github.com/unit8co/darts/issues/2359)** - Foundation models tracking (April 2024)

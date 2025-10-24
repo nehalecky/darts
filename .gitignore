@@ -29,3 +29,6 @@ requirements-latest.txt
 
 # Git worktrees for parallel development
 .worktrees/
+
+# Local planning documents
+/plans/

@@ -55,6 +55,11 @@ class TimesFMModel(FoundationForecastingModel):
         If None, automatically detects best available device.
     normalize_inputs : bool, default=True
         Whether to normalize inputs before forecasting
+    use_quantile_forecasts : bool, default=False
+        Enable probabilistic forecasting via TimesFM's continuous quantile head.
+        When True and num_samples > 1, generates uncertainty estimates through
+        quantile interpolation. Note: Provides marginal uncertainty at each time
+        point but does not preserve temporal correlation across the forecast horizon.
 
     Examples
     --------
@@ -107,6 +112,7 @@ class TimesFMModel(FoundationForecastingModel):
         zero_shot: bool = True,
         device: Optional[str] = None,
         normalize_inputs: bool = True,
+        use_quantile_forecasts: bool = False,
         **kwargs
     ):
         # Validate inputs first (before calling super().__init__)
@@ -144,6 +150,7 @@ class TimesFMModel(FoundationForecastingModel):
         self.model_size = model_size
         self.zero_shot = zero_shot
         self.normalize_inputs = normalize_inputs
+        self.use_quantile_forecasts = use_quantile_forecasts
 
         # Load hard architectural limits from capabilities registry
         caps = get_variant("timesfm", f"timesfm-{model_version}")
@@ -203,11 +210,15 @@ class TimesFMModel(FoundationForecastingModel):
         except ImportError:
             raise_log(
                 ImportError(
-                    "TimesFM requires the 'timesfm' package. "
+                    "The 'timesfm' package is required for TimesFMModel but is not installed.\n"
+                    "\n"
                     "Install it with:\n"
-                    "  git clone https://github.com/google-research/timesfm.git\n"
-                    "  cd timesfm\n"
-                    "  pip install -e .[torch]"
+                    "  uv pip install 'darts[timesfm]'\n"
+                    "\n"
+                    "Or with pip:\n"
+                    "  pip install 'darts[timesfm]'\n"
+                    "\n"
+                    "See INSTALL.md for more details."
                 ),
                 logger
             )
@@ -229,10 +240,10 @@ class TimesFMModel(FoundationForecastingModel):
                     max_context=self.context_length,
                     max_horizon=256,  # Default, can be overridden in predict
                     normalize_inputs=self.normalize_inputs,
-                    use_continuous_quantile_head=False,  # Not using probabilistic for now
+                    use_continuous_quantile_head=self.use_quantile_forecasts,
                     force_flip_invariance=True,
                     infer_is_positive=True,
-                    fix_quantile_crossing=False,  # Not using quantiles for now
+                    fix_quantile_crossing=self.use_quantile_forecasts,
                 )
             )
 
@@ -242,6 +253,16 @@ class TimesFMModel(FoundationForecastingModel):
             logger.error(f"Failed to load TimesFM model: {e}")
             logger.error("Model loading will be attempted again on first predict() call")
             raise
+
+    @property
+    def supports_multivariate(self) -> bool:
+        """TimesFM only supports univariate series"""
+        return False
+
+    @property
+    def supports_probabilistic_prediction(self) -> bool:
+        """TimesFM 2.5 supports probabilistic forecasting via quantile head"""
+        return self.use_quantile_forecasts
 
     @property
     def supports_transferable_series_prediction(self) -> bool:
@@ -446,7 +467,7 @@ class TimesFMModel(FoundationForecastingModel):
         logger.info(f"Generating forecasts for {len(inputs)} series, horizon={n}")
 
         # Generate forecasts using TimesFM
-        point_forecasts, _ = self._model.forecast(
+        point_forecasts, quantile_forecasts = self._model.forecast(
             horizon=n,
             inputs=inputs,
         )
@@ -454,11 +475,22 @@ class TimesFMModel(FoundationForecastingModel):
         # Convert back to TimeSeries
         forecasts = []
         for i, s in enumerate(series_list):
-            # Build TimeSeries with proper time index
-            forecast_ts = self._build_forecast_series(
-                points=point_forecasts[i],
-                input_series=s,
-            )
+            if self.use_quantile_forecasts and num_samples > 1 and quantile_forecasts is not None:
+                # Use quantile forecasts to create probabilistic TimeSeries
+                # TimesFM returns: [mean, q10, q20, q30, q40, q50, q60, q70, q80, q90]
+                # Shape: (horizon, 10)
+                forecast_ts = self._build_probabilistic_forecast_series(
+                    quantiles=quantile_forecasts[i],
+                    input_series=s,
+                    num_samples=num_samples,
+                    random_state=kwargs.get('random_state', None),
+                )
+            else:
+                # Deterministic forecast
+                forecast_ts = self._build_forecast_series(
+                    points=point_forecasts[i],
+                    input_series=s,
+                )
             forecasts.append(forecast_ts)
 
         logger.info(f"✓ Generated {len(forecasts)} forecast(s)")
@@ -514,6 +546,101 @@ class TimesFMModel(FoundationForecastingModel):
                 values=forecast_values,
                 columns=input_series.columns
             )
+
+        return forecast_ts
+
+    def _build_probabilistic_forecast_series(
+        self,
+        quantiles: np.ndarray,
+        input_series: TimeSeries,
+        num_samples: int,
+        random_state: Optional[int] = None,
+    ) -> TimeSeries:
+        """
+        Build a probabilistic TimeSeries from quantile forecasts via interpolation.
+
+        TimesFM's quantile head returns: [mean, q10, q20, q30, q40, q50, q60, q70, q80, q90]
+        This method converts these quantiles into samples using inverse transform sampling.
+
+        **Method**: Quantile-based uncertainty estimation
+        - Samples uniform random quantile levels between 0.1 and 0.9
+        - Interpolates between TimesFM's output quantiles
+        - Each sample is independent (no temporal correlation across horizon)
+
+        **Limitations**:
+        - Marginal distributions only (no joint distribution across time)
+        - No trajectory coherence (samples may form unrealistic sequences)
+        - Limited to 10th-90th percentile range (no extreme tails)
+
+        For applications requiring temporally correlated scenarios, consider
+        models with true simulation capabilities (ARIMA, state space models).
+
+        Parameters
+        ----------
+        quantiles : np.ndarray
+            Quantile forecasts, shape (horizon, 10)
+        input_series : TimeSeries
+            Original input series (used to continue time index)
+        num_samples : int
+            Number of samples to generate
+        random_state : int, optional
+            Random seed for reproducibility
+
+        Returns
+        -------
+        TimeSeries
+            Probabilistic forecast as a Darts TimeSeries with n_samples > 1
+        """
+        horizon = quantiles.shape[0]
+
+        # Validate and enforce quantile monotonicity
+        # TimesFM has fix_quantile_crossing, but verify anyway
+        for t in range(horizon):
+            if not np.all(np.diff(quantiles[t]) >= 0):
+                logger.warning(
+                    f"Quantile crossing detected at time step {t}. "
+                    f"Sorting to enforce monotonicity."
+                )
+                quantiles[t] = np.sort(quantiles[t])
+
+        # Generate samples by interpolating between quantiles
+        # Using inverse transform sampling from empirical CDF
+        quantile_levels = np.array([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
+
+        # Initialize random number generator with seed
+        rng = np.random.default_rng(random_state)
+
+        # Sample uniform random quantile levels within observed range [0.1, 0.9]
+        # This avoids extrapolation into unobserved tails
+        random_quantiles = rng.uniform(0.1, 0.9, size=num_samples)
+
+        # Create samples array: (horizon, 1 component, num_samples)
+        samples = np.zeros((horizon, 1, num_samples))
+
+        for t in range(horizon):
+            # Interpolate for each time step independently
+            # Note: This loses temporal correlation across horizon
+            for s in range(num_samples):
+                samples[t, 0, s] = np.interp(random_quantiles[s], quantile_levels, quantiles[t])
+
+        # Generate time index that continues from input series
+        if input_series.has_datetime_index:
+            start_time = input_series.end_time() + input_series.freq
+            time_index = pd.date_range(
+                start=start_time,
+                periods=horizon,
+                freq=input_series.freq
+            )
+        else:
+            start_idx = input_series.end_time() + 1
+            time_index = pd.RangeIndex(start=start_idx, stop=start_idx + horizon)
+
+        # Build probabilistic TimeSeries
+        forecast_ts = TimeSeries.from_times_and_values(
+            times=time_index,
+            values=samples,
+            columns=input_series.columns
+        )
 
         return forecast_ts
 
