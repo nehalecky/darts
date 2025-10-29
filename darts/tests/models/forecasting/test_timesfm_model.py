@@ -18,9 +18,7 @@ class TestTimesFMModelConstruction:
         from darts.models.forecasting.foundation import TimesFMModel
 
         model = TimesFMModel()
-        assert model.model_version == "2.5"
-        assert model.model_size == "200m"
-        assert model.max_context_length == 1024
+        assert model.context_length == 1024
         assert model.zero_shot is True
 
     def test_model_construction_custom(self):
@@ -28,42 +26,26 @@ class TestTimesFMModelConstruction:
         from darts.models.forecasting.foundation import TimesFMModel
 
         model = TimesFMModel(
-            model_version="2.5",
-            model_size="200m",
-            max_context_length=512,
+            context_length=512,
             zero_shot=True,
             device="cpu"
         )
-        assert model.max_context_length == 512
+        assert model.context_length == 512
         assert model.device == "cpu"
-
-    def test_invalid_model_version(self):
-        """Test that invalid model version raises error"""
-        from darts.models.forecasting.foundation import TimesFMModel
-
-        with pytest.raises(ValueError, match="model_version"):
-            TimesFMModel(model_version="3.0")
-
-    def test_invalid_model_size(self):
-        """Test that invalid model size raises error"""
-        from darts.models.forecasting.foundation import TimesFMModel
-
-        with pytest.raises(ValueError, match="model_size"):
-            TimesFMModel(model_size="100m")
 
     def test_invalid_context_length_not_divisible_by_32(self):
         """Test that context length not divisible by 32 raises error"""
         from darts.models.forecasting.foundation import TimesFMModel
 
-        with pytest.raises(ValueError, match="divisible by 32"):
-            TimesFMModel(max_context_length=100)
+        with pytest.raises(ValueError, match="must be divisible by"):
+            TimesFMModel(context_length=100)
 
     def test_invalid_context_length_negative(self):
         """Test that negative context length raises error"""
         from darts.models.forecasting.foundation import TimesFMModel
 
-        with pytest.raises(ValueError, match="positive"):
-            TimesFMModel(max_context_length=-32)
+        with pytest.raises(ValueError, match="must be at least"):
+            TimesFMModel(context_length=-32)
 
     def test_device_detection_auto(self):
         """Test automatic device detection"""
@@ -102,28 +84,28 @@ class TestTimesFMModelConstruction:
         assert model.min_train_series_length == 32
 
         # Context window and lags (7-tuple format for historical_forecasts compatibility)
-        assert model.extreme_lags == (-1024, 0, 0, 0, 0, 0, 0)  # Default context length
+        assert model.extreme_lags == (-1024, 0, None, None, None, None, 0)  # Default context length
 
     def test_model_properties_custom_context(self):
         """Test model properties with custom context length"""
         from darts.models.forecasting.foundation import TimesFMModel
 
-        model = TimesFMModel(max_context_length=512)
-        assert model.extreme_lags == (-512, 0, 0, 0, 0, 0, 0)
+        model = TimesFMModel(context_length=512)
+        assert model.extreme_lags == (-512, 0, None, None, None, None, 0)
 
     def test_string_representation(self):
         """Test string representation of model"""
         from darts.models.forecasting.foundation import TimesFMModel
 
         model = TimesFMModel(
-            model_version="2.5",
-            model_size="200m",
-            max_context_length=512
+            context_length=512
         )
 
         str_repr = str(model)
         assert "TimesFM" in str_repr
+        # String representation includes version, size, context, and device
         assert "2.5" in str_repr
+        assert "200m" in str_repr
         assert "512" in str_repr
 
 
@@ -220,7 +202,7 @@ class TestTimesFMModelPredict:
         from darts.utils import timeseries_generation as tg
 
         series = tg.sine_timeseries(length=100)
-        model = TimesFMModel(zero_shot=True, max_context_length=512)
+        model = TimesFMModel(zero_shot=True, context_length=512)
 
         # Predict WITHOUT calling fit() - true zero-shot!
         forecast = model.predict(n=12, series=series)
@@ -238,7 +220,7 @@ class TestTimesFMModelPredict:
         series = AirPassengersDataset().load()
         train, val = series.split_before(0.8)
 
-        model = TimesFMModel(zero_shot=True, max_context_length=512)
+        model = TimesFMModel(zero_shot=True, context_length=512)
         model.fit(train)
 
         forecast = model.predict(n=12, series=train)
@@ -272,7 +254,7 @@ class TestTimesFMModelPredict:
             tg.gaussian_timeseries(length=100)
         ]
 
-        model = TimesFMModel(zero_shot=True, max_context_length=512)
+        model = TimesFMModel(zero_shot=True, context_length=512)
         model.fit(series_list[0])
 
         forecasts = model.predict(n=10, series=series_list)
@@ -300,7 +282,7 @@ class TestTimesFMModelPredict:
             multivariate["B"][:50]
         ]
 
-        model = TimesFMModel(zero_shot=True, max_context_length=512)
+        model = TimesFMModel(zero_shot=True, context_length=512)
 
         # Should work without errors
         forecasts = model.predict(n=10, series=series_list)

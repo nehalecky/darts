@@ -255,6 +255,29 @@ class FoundationForecastingModel(GlobalForecastingModel):
         pass
 
     @property
+    def model_name(self) -> str:
+        """
+        Get the user-facing display name from registry.
+
+        Returns
+        -------
+        str
+            The display name of the model (e.g., "TimesFM 2.5 200M", "Chronos 2 Base").
+
+        Raises
+        ------
+        AttributeError
+            If capability identifiers are not set on the model class.
+        """
+        if self._family_name is None or self._subfamily_name is None:
+            raise AttributeError(
+                f"{self.__class__.__name__} must define _family_name and _subfamily_name"
+            )
+
+        spec = get_model_spec(self._get_registry_key())
+        return spec["metadata"]["name"]
+
+    @property
     def supports_multivariate(self) -> bool:
         """
         Whether this model supports multivariate time series.

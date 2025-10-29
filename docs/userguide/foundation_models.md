@@ -140,7 +140,7 @@ Foundation models break the fundamental contract of Darts' `ForecastingModel` ba
 
 > **Why not create a separate `FoundationForecastingModel` base class?**
 >
-> TimesFM intentionally extends `GlobalForecastingModel` to integrate seamlessly with existing Darts workflows. While a custom base class exists (`FoundationForecastingModel`) for future models that may deviate further from Darts conventions, TimesFM's zero-shot paradigm actually *enhances* rather than replaces the standard API:
+> TimesFM 2.5 intentionally extends `GlobalForecastingModel` to integrate seamlessly with existing Darts workflows. While a custom base class exists (`FoundationForecastingModel`) for future models that may deviate further from Darts conventions, TimesFM's zero-shot paradigm actually *enhances* rather than replaces the standard API:
 >
 > - ✅ Works with `historical_forecasts()`, `backtest()`, and other Darts utilities
 > - ✅ Familiar API for existing Darts users
@@ -173,9 +173,11 @@ Foundation models break the fundamental contract of Darts' `ForecastingModel` ba
 >
 > The model downloads once, then caches for subsequent predictions. This is the foundation model paradigm—immediate utility with no configuration.
 
-## Using TimesFM (PyTorch Version)
+## Using TimesFM 2.5 (PyTorch Version)
 
-[TimesFM](https://blog.research.google/2024/02/a-decoder-only-foundation-model-for.html) is Google's foundation model for time series, trained on [100 billion time points](https://arxiv.org/abs/2310.10688). Darts provides access to the [PyTorch implementation](https://huggingface.co/google/timesfm-2.5-200m-pytorch) (timesfm-2.5-torch), offering efficient inference on CPU, Apple Silicon (MPS), and NVIDIA GPUs.
+[TimesFM 2.5](https://blog.research.google/2024/02/a-decoder-only-foundation-model-for.html) is Google's TimesFM 2.5 foundation model for time series, trained on [100 billion time points](https://arxiv.org/abs/2310.10688). Darts provides access to the [PyTorch implementation](https://huggingface.co/google/timesfm-2.5-200m-pytorch) (timesfm-2.5-torch), offering efficient inference on CPU, Apple Silicon (MPS), and NVIDIA GPUs.
+
+**Note:** TimesFM 2.5 with 200M parameters is the only publicly available version from Google Research.
 
 ### Installation
 
@@ -228,7 +230,7 @@ plt.show()
 
 ### Device Selection and Performance
 
-TimesFM automatically selects the best available device, but you can specify it explicitly:
+TimesFM 2.5 automatically selects the best available device, but you can specify it explicitly:
 
 ```python
 # Automatic device selection (recommended)
@@ -259,7 +261,7 @@ Longer context can capture more complex patterns but increases computation time.
 
 ### Current Limitations
 
-TimesFM's decoder-only architecture has specific constraints:
+TimesFM 2.5's decoder-only architecture has specific constraints:
 - **Univariate forecasting only**: Forecasts one time series at a time (no cross-series dependencies)
 - **No covariate support**: Cannot incorporate external variables (weather, promotions, etc.)
 - **Shorter context window**: 512 time steps (vs 8192 for Chronos 2)
@@ -487,7 +489,9 @@ This comprehensive comparison shows the native capabilities of each foundation m
 |-------|------------|----------------|-------------|------------|--------------|-----------------|-------------------|---------------|-----------|
 | **Chronos 2 Base** | 120M | 8192 | 1024 | ✅ | ✅ | ✅ | ✅ | ✅ | 21 |
 | **Chronos 2 Large** | 710M | 8192 | 1024 | ✅ | ✅ | ✅ | ✅ | ✅ | 21 |
-| **TimesFM 2.5** | 200M | 512 | — | ✅ | ❌ | ❌ | ❌ | ✅ | 10 |
+| **TimesFM 2.5** | 200M | 16K | — | ✅ | ❌ | ❌ | ❌ | ✅ | 10 |
+
+*Note: TimesFM 2.5 with 200M parameters is the only publicly available version.*
 
 ### Capability Legend
 
@@ -516,7 +520,7 @@ This comprehensive comparison shows the native capabilities of each foundation m
 - Decoder generates future predictions (conditioned on future covariates)
 - Result: Native support for multivariate and covariate-based forecasting
 
-**TimesFM (Decoder-Only):**
+**TimesFM 2.5 (Decoder-Only):**
 - Streamlined architecture optimized for univariate patterns
 - No encoder means no mechanism for processing auxiliary information
 - Result: Faster inference but limited to univariate time series only
@@ -525,11 +529,11 @@ This comprehensive comparison shows the native capabilities of each foundation m
 
 **Need covariates or multivariate?** → Use **Chronos 2** (only foundation model with native support)
 
-**Univariate forecasting only?** → Consider **TimesFM** for faster inference or **Chronos 2** for better uncertainty quantification
+**Univariate forecasting only?** → Consider **TimesFM 2.5** for faster inference or **Chronos 2** for better uncertainty quantification
 
 **Maximum context needed?** → Use **Chronos 2** (8192 vs 512 time steps)
 
-**Fastest inference?** → Use **TimesFM** (decoder-only is ~2-3x faster than encoder-decoder)
+**Fastest inference?** → Use **TimesFM 2.5** (decoder-only is ~2-3x faster than encoder-decoder)
 
 ### Key Capabilities
 
@@ -561,7 +565,7 @@ Chronos 2 supports:
 ## Learn More
 
 **Tutorial Notebooks:**
-- **[TimesFM Tutorial](../../examples/25-TimesFM-foundation-model.ipynb)** - Google's TimesFM with zero-shot forecasting
+- **[TimesFM 2.5 Tutorial](../../examples/25-TimesFM-foundation-model.ipynb)** - Google's TimesFM 2.5 with zero-shot forecasting
 - **[Chronos 2 Tutorial](../../examples/26-Chronos-foundation-model.ipynb)** - Amazon's Chronos with probabilistic forecasts
 - **[Foundation Models Comparison](../../examples/28-Foundation-Models-Tutorial.ipynb)** - Comprehensive comparison across TimesFM 2.5, Chronos 2, and traditional models on diverse datasets (Air Passengers, Energy Load, Taylor Electricity)
 

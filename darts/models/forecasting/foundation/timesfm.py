@@ -12,10 +12,9 @@ import torch
 
 from darts import TimeSeries
 from darts.logging import get_logger, raise_if_not, raise_log
-
-from .base import FoundationForecastingModel
-from .registry import get_model_spec
-from .validation import (
+from darts.models.forecasting.forecasting_model import GlobalForecastingModel
+from darts.models.forecasting.foundation.capabilities import get_variant
+from darts.models.forecasting.foundation.validation import (
     validate_context_length,
     validate_forecast_horizon
 )
@@ -23,7 +22,7 @@ from .validation import (
 logger = get_logger(__name__)
 
 
-class TimesFMModel(FoundationForecastingModel):
+class TimesFMModel(GlobalForecastingModel):
     """
     TimesFM Foundation Model for Time Series Forecasting
     -----------------------------------------------------
@@ -33,9 +32,9 @@ class TimesFMModel(FoundationForecastingModel):
           with other foundation models (ChronosModel) and enable shared capabilities
           infrastructure. Currently on legacy infrastructure for backward compatibility.
 
-    This class provides a wrapper around Google's TimesFM foundation model.
-    TimesFM is a decoder-only transformer pre-trained on 100B+ time points
-    for zero-shot time series forecasting.
+    This class provides a wrapper around Google's TimesFM 2.5 foundation model
+    (200M parameters). TimesFM is a decoder-only transformer pre-trained on
+    100B+ time points for zero-shot time series forecasting.
 
     The model supports:
         - Zero-shot forecasting (no training required)
@@ -45,13 +44,12 @@ class TimesFMModel(FoundationForecastingModel):
 
     Parameters
     ----------
-    model_version : str, default="2.5"
-        TimesFM version to use ("1.0", "2.0", or "2.5")
-    model_size : str, default="200m"
-        Model size ("200m" or "500m" for v2.0+)
-    max_context_length : int, default=1024
+    context_length : int, optional
         Maximum number of historical time points to use as context.
         Must be a multiple of 32 (TimesFM's patch size) and positive.
+        If None, defaults to 1024.
+    max_forecast_horizon : int, optional
+        Maximum forecast horizon to support. If None, defaults to 4096.
     zero_shot : bool, default=True
         If True, use pre-trained weights without fine-tuning.
         If False, fine-tuning is applied (not yet implemented).
@@ -60,11 +58,6 @@ class TimesFMModel(FoundationForecastingModel):
         If None, automatically detects best available device.
     normalize_inputs : bool, default=True
         Whether to normalize inputs before forecasting
-    use_quantile_forecasts : bool, default=False
-        Enable probabilistic forecasting via TimesFM's continuous quantile head.
-        When True and num_samples > 1, generates uncertainty estimates through
-        quantile interpolation. Note: Provides marginal uncertainty at each time
-        point but does not preserve temporal correlation across the forecast horizon.
 
     Examples
     --------
@@ -86,6 +79,17 @@ class TimesFMModel(FoundationForecastingModel):
 
     Notes
     -----
+    This wrapper uses TimesFM 2.5 with 200M parameters, which is the only
+    publicly available version from Google Research. Earlier versions (1.0)
+    are deprecated, and larger sizes (500M) are not publicly released.
+
+    **Probabilistic Forecasting:**
+    TimesFM 2.5 always enables probabilistic forecasting via its continuous
+    quantile head. To generate probabilistic forecasts, pass `num_samples > 1`
+    to the `predict()` method. This will generate uncertainty estimates through
+    quantile interpolation. Note: Provides marginal uncertainty at each time
+    point but does not preserve temporal correlation across the forecast horizon.
+
     This model requires the `timesfm` package to be installed:
 
         git clone https://github.com/google-research/timesfm.git
@@ -103,67 +107,29 @@ class TimesFMModel(FoundationForecastingModel):
     .. [3] HuggingFace Model: https://huggingface.co/google/timesfm-2.5-200m-pytorch
     """
 
-    # Capability identifiers
-    _family_name = "timesfm"
-    _subfamily_name = "timesfm-2.5"
-    # _variant_name is set dynamically based on model_size
-
     def __init__(
         self,
-        model_version: str = "2.5",
-        model_size: str = "200m",
         context_length: Optional[int] = None,
         max_forecast_horizon: Optional[int] = None,
         zero_shot: bool = True,
         device: Optional[str] = None,
         normalize_inputs: bool = True,
-        use_quantile_forecasts: bool = False,
         **kwargs
     ):
-        # Validate inputs first (before calling super().__init__)
-        raise_if_not(
-            model_version in ["1.0", "2.0", "2.5"],
-            f"model_version must be one of ['1.0', '2.0', '2.5'], got {model_version}",
-            logger
-        )
+        super().__init__()
 
-        raise_if_not(
-            model_size in ["200m", "500m"],
-            f"model_size must be one of ['200m', '500m'], got {model_size}",
-            logger
-        )
-
-        raise_if_not(
-            max_context_length > 0,
-            f"max_context_length must be positive, got {max_context_length}",
-            logger
-        )
-
-        raise_if_not(
-            max_context_length % 32 == 0,
-            f"max_context_length must be divisible by 32, got {max_context_length}",
-            logger
-        )
-
-        # Set variant name based on model size for capabilities registry
-        self._variant_name = model_size
-
-        # Call parent constructor (FoundationForecastingModel)
-        super().__init__(**kwargs)
-
-        self.model_version = model_version
-        self.model_size = model_size
+        # Always use TimesFM 2.5 200M (only publicly available version)
+        self.model_version = "2.5"
+        self.model_size = "200m"
         self.zero_shot = zero_shot
         self.normalize_inputs = normalize_inputs
-        self.use_quantile_forecasts = use_quantile_forecasts
 
-        # Load hard architectural limits from registry
-        spec = get_model_spec(f"timesfm-{self.model_version}-200m")
-        constraints = spec["constraints"]
-        self._hard_max_context = constraints["max_context_length"]
-        self._hard_max_horizon = constraints["max_forecast_horizon"]
-        self._patch_size = constraints["patch_size"]
-        self._default_context_length = constraints["default_context_length"]
+        # Load hard architectural limits from capabilities registry
+        caps = get_variant("timesfm", f"timesfm-{self.model_version}")
+        self._hard_max_context = caps["max_context_length"]
+        self._hard_max_horizon = caps["max_forecast_horizon"]
+        self._patch_size = caps["patch_size"]
+        self._default_context_length = caps["default_context_length"]
 
         # Validate and set user's minimum context_length preference
         if context_length is None:
@@ -190,7 +156,7 @@ class TimesFMModel(FoundationForecastingModel):
         self._model = None
 
         logger.info(
-            f"Initialized TimesFM {model_version} ({model_size}) "
+            f"Initialized TimesFM 2.5 (200M params) "
             f"with context length {self.context_length} on {self.device}"
         )
 
@@ -246,10 +212,10 @@ class TimesFMModel(FoundationForecastingModel):
                     max_context=self.context_length,
                     max_horizon=256,  # Default, can be overridden in predict
                     normalize_inputs=self.normalize_inputs,
-                    use_continuous_quantile_head=self.use_quantile_forecasts,
+                    use_continuous_quantile_head=True,  # Always enable
                     force_flip_invariance=True,
                     infer_is_positive=True,
-                    fix_quantile_crossing=self.use_quantile_forecasts,
+                    fix_quantile_crossing=True,  # Always enable
                 )
             )
 
@@ -261,14 +227,27 @@ class TimesFMModel(FoundationForecastingModel):
             raise
 
     @property
+    def model_name(self) -> str:
+        """
+        Get the user-facing display name from registry.
+
+        Returns
+        -------
+        str
+            The display name of the model (e.g., "TimesFM 2.5 200M").
+        """
+        spec = get_model_spec(f"timesfm-{self.model_version}-200m")
+        return spec["metadata"]["name"]
+
+    @property
     def supports_multivariate(self) -> bool:
         """TimesFM only supports univariate series"""
         return False
 
     @property
     def supports_probabilistic_prediction(self) -> bool:
-        """TimesFM 2.5 supports probabilistic forecasting via quantile head"""
-        return self.use_quantile_forecasts
+        """TimesFM 2.5 always supports probabilistic forecasting via quantile head"""
+        return True
 
     @property
     def supports_transferable_series_prediction(self) -> bool:
@@ -325,38 +304,44 @@ class TimesFMModel(FoundationForecastingModel):
         """
         return 0, 0, False, False
 
-    def _zero_shot_fit(
+    def fit(
         self,
         series: Union[TimeSeries, List[TimeSeries]],
         past_covariates: Optional[Union[TimeSeries, List[TimeSeries]]] = None,
         future_covariates: Optional[Union[TimeSeries, List[TimeSeries]]] = None,
-        **kwargs
     ) -> "TimesFMModel":
         """
-        Validate inputs for zero-shot inference.
+        Fit the TimesFM model.
+
+        In zero-shot mode, this just validates inputs and loads the pre-trained model.
+        No actual training occurs since TimesFM is a foundation model.
 
         Parameters
         ----------
         series : TimeSeries or List[TimeSeries]
-            Validation series. Must be univariate.
+            Training time series. Must be univariate.
         past_covariates : TimeSeries or List[TimeSeries], optional
-            Not supported by TimesFM.
+            Past covariates (not currently supported)
         future_covariates : TimeSeries or List[TimeSeries], optional
-            Not supported by TimesFM.
-        **kwargs
-            Ignored.
+            Future covariates (not currently supported)
 
         Returns
         -------
-        self
-            Validated model.
+        self : TimesFMModel
+            Fitted model instance
         """
-        # Validate series capabilities using base class method
-        self._validate_series_capabilities(series)
+        super().fit(series, past_covariates, future_covariates)
 
-        # Validate series length
+        # Validate series
         series_list = [series] if isinstance(series, TimeSeries) else series
+
         for s in series_list:
+            raise_if_not(
+                s.is_univariate,
+                "TimesFM only supports univariate series",
+                logger
+            )
+
             if len(s) < self.min_train_series_length:
                 logger.warning(
                     f"Series has length {len(s)}, which is less than minimum "
@@ -373,43 +358,18 @@ class TimesFMModel(FoundationForecastingModel):
         # Load pre-trained model
         self._load_model()
 
-        logger.info("TimesFMModel ready for zero-shot forecasting")
+        if self.zero_shot:
+            logger.info(
+                "Zero-shot mode: fit() validates inputs and loads pre-trained model. "
+                "No training/weight updates occur. Ready for immediate forecasting."
+            )
+        else:
+            raise NotImplementedError(
+                "Fine-tuning support coming in future version. "
+                "For now, use zero_shot=True"
+            )
 
         return self
-
-    def _apply_peft(self) -> None:
-        """
-        Apply PEFT configuration to the base model.
-
-        Raises
-        ------
-        NotImplementedError
-            PEFT fine-tuning not yet implemented for TimesFM.
-        """
-        raise NotImplementedError(
-            "TimesFM does not yet support PEFT fine-tuning. "
-            "Use zero_shot=True for zero-shot forecasting."
-        )
-
-    def _train_with_peft(
-        self,
-        series: Union[TimeSeries, List[TimeSeries]],
-        past_covariates: Optional[Union[TimeSeries, List[TimeSeries]]],
-        future_covariates: Optional[Union[TimeSeries, List[TimeSeries]]],
-        **kwargs
-    ) -> "TimesFMModel":
-        """
-        Train the PEFT adapters on the provided data.
-
-        Raises
-        ------
-        NotImplementedError
-            PEFT training not yet implemented for TimesFM.
-        """
-        raise NotImplementedError(
-            "TimesFM does not yet support PEFT training. "
-            "Use zero_shot=True for zero-shot forecasting."
-        )
 
     def predict(
         self,
@@ -460,12 +420,17 @@ class TimesFMModel(FoundationForecastingModel):
             logger.info("Loading model for zero-shot forecasting...")
             self._load_model()
 
-        # Validate series capabilities
-        self._validate_series_capabilities(series)
-
         # Prepare inputs
         is_single = isinstance(series, TimeSeries)
         series_list = [series] if is_single else series
+
+        # Validate all series are univariate
+        for s in series_list:
+            raise_if_not(
+                s.is_univariate,
+                "TimesFM only supports univariate series",
+                logger
+            )
 
         # Convert to numpy arrays (flatten to 1D)
         inputs = [s.values().flatten() for s in series_list]
@@ -481,7 +446,7 @@ class TimesFMModel(FoundationForecastingModel):
         # Convert back to TimeSeries
         forecasts = []
         for i, s in enumerate(series_list):
-            if self.use_quantile_forecasts and num_samples > 1 and quantile_forecasts is not None:
+            if num_samples > 1 and quantile_forecasts is not None:
                 # Use quantile forecasts to create probabilistic TimeSeries
                 # TimesFM returns: [mean, q10, q20, q30, q40, q50, q60, q70, q80, q90]
                 # Shape: (horizon, 10)
@@ -600,13 +565,10 @@ class TimesFMModel(FoundationForecastingModel):
         horizon = quantiles.shape[0]
 
         # Validate and enforce quantile monotonicity
-        # TimesFM has fix_quantile_crossing, but verify anyway
+        # TimesFM has fix_quantile_crossing enabled (line 219), but edge cases can slip through.
+        # Silently sort any remaining violations to ensure proper ordering.
         for t in range(horizon):
             if not np.all(np.diff(quantiles[t]) >= 0):
-                logger.warning(
-                    f"Quantile crossing detected at time step {t}. "
-                    f"Sorting to enforce monotonicity."
-                )
                 quantiles[t] = np.sort(quantiles[t])
 
         # Generate samples by interpolating between quantiles
