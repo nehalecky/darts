@@ -13,7 +13,7 @@ from darts import TimeSeries
 from darts.logging import get_logger, raise_if_not
 
 from .base import FoundationForecastingModel
-from .capabilities import get_variant
+from .registry import get_model_spec
 from .validation import validate_context_length, validate_forecast_horizon
 
 logger = get_logger(__name__)
@@ -411,12 +411,13 @@ class ChronosModel(FoundationForecastingModel):
 
         super().__init__(lora_config=lora_config, **kwargs)
 
-        # Load hard architectural limits from capabilities registry
-        caps = get_variant("chronos", "chronos-2")
-        self._hard_max_context = caps["max_context_length"]
-        self._hard_max_horizon = caps["max_forecast_horizon"]
-        self._patch_size = caps["patch_size"]
-        self._default_context_length = caps["default_context_length"]
+        # Load hard architectural limits from registry
+        spec = get_model_spec("chronos-2-base")
+        constraints = spec["constraints"]
+        self._hard_max_context = constraints["max_context_length"]
+        self._hard_max_horizon = constraints["max_forecast_horizon"]
+        self._patch_size = constraints["patch_size"]
+        self._default_context_length = constraints["default_context_length"]
 
         # Validate and set user's minimum context_length preference
         if context_length is None:
@@ -454,6 +455,10 @@ class ChronosModel(FoundationForecastingModel):
             logger.info("Chronos2Pipeline loaded successfully")
 
         return self._pipeline
+
+    def _get_registry_key(self) -> str:
+        """Get registry key for Chronos model."""
+        return "chronos-2-base"
 
     def _zero_shot_fit(
         self,
@@ -586,7 +591,7 @@ class ChronosModel(FoundationForecastingModel):
         past_covariates: Optional[Union[TimeSeries, List[TimeSeries]]] = None,
         future_covariates: Optional[Union[TimeSeries, List[TimeSeries]]] = None,
         num_samples: int = 1,
-        quantile_levels: Optional[List[float]] = None,
+        quantiles: Optional[List[float]] = None,
         **kwargs
     ) -> Union[TimeSeries, List[TimeSeries]]:
         """
@@ -611,7 +616,7 @@ class ChronosModel(FoundationForecastingModel):
             Number of probabilistic samples to generate.
             When num_samples=1, returns point forecast (median).
             When num_samples>1, returns probabilistic forecast.
-        quantile_levels : List[float], optional
+        quantiles : List[float], optional
             Specific quantile levels to predict. If None, defaults to 9 quantiles
             [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] for probabilistic forecasts
             or [0.5] for point forecasts. Chronos 2 supports up to 21 quantiles.
@@ -646,7 +651,7 @@ class ChronosModel(FoundationForecastingModel):
         >>> forecast = model.predict(
         ...     n=24,
         ...     series=train_series,
-        ...     quantile_levels=[0.1, 0.5, 0.9]
+        ...     quantiles=[0.1, 0.5, 0.9]
         ... )
         """
         # Validate inputs
@@ -663,20 +668,20 @@ class ChronosModel(FoundationForecastingModel):
         future_df = _create_future_df(series, future_covariates, n)
 
         # Determine quantile levels for probabilistic forecasting
-        if quantile_levels is None:
+        if quantiles is None:
             if num_samples > 1:
                 # Generate multiple quantiles for probabilistic forecast
-                quantile_levels = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+                quantiles = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
             else:
                 # Just get the median for point forecast
-                quantile_levels = [0.5]
+                quantiles = [0.5]
 
         # Call Chronos2Pipeline.predict_df()
-        logger.debug(f"Calling Chronos2Pipeline.predict_df(prediction_length={n}, quantile_levels={quantile_levels})...")
+        logger.debug(f"Calling Chronos2Pipeline.predict_df(prediction_length={n}, quantiles={quantiles})...")
         pred_df = self.pipeline.predict_df(
             context_df,
             prediction_length=n,
-            quantile_levels=quantile_levels,
+            quantile_levels=quantiles,  # Note: Chronos library still uses quantile_levels internally
             future_df=future_df,
             id_column="id",
             timestamp_column="timestamp",

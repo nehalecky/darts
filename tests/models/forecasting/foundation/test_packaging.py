@@ -89,92 +89,102 @@ def test_timesfm_extra_defined():
     assert len(extras["timesfm"]) > 0, "'timesfm' extra is empty"
 
 
-def test_capabilities_yaml_exists():
-    """Verify capabilities.yaml exists and is valid YAML."""
-    capabilities_path = (
+def test_registry_yaml_exists():
+    """Verify registry.yaml exists and is valid YAML."""
+    registry_path = (
         Path(__file__).parents[4]
         / "darts"
         / "models"
         / "forecasting"
         / "foundation"
-        / "capabilities.yaml"
+        / "registry.yaml"
     )
 
-    assert capabilities_path.exists(), \
-        f"capabilities.yaml not found at {capabilities_path}"
+    assert registry_path.exists(), \
+        f"registry.yaml not found at {registry_path}"
 
-    with open(capabilities_path, "r") as f:
+    with open(registry_path, "r") as f:
         data = yaml.safe_load(f)
 
-    assert isinstance(data, dict), "capabilities.yaml must be a dictionary"
-    assert len(data) > 0, "capabilities.yaml is empty"
+    assert isinstance(data, dict), "registry.yaml must be a dictionary"
+    assert len(data) > 0, "registry.yaml is empty"
 
 
-def test_capabilities_has_required_families():
-    """Verify capabilities.yaml has chronos and timesfm families."""
-    capabilities_path = (
+def test_registry_has_required_models():
+    """Verify registry.yaml has required model entries."""
+    registry_path = (
         Path(__file__).parents[4]
         / "darts"
         / "models"
         / "forecasting"
         / "foundation"
-        / "capabilities.yaml"
+        / "registry.yaml"
     )
 
-    with open(capabilities_path, "r") as f:
-        capabilities = yaml.safe_load(f)
+    with open(registry_path, "r") as f:
+        registry = yaml.safe_load(f)
 
-    # Check for required families
-    assert "chronos" in capabilities, "chronos family not defined"
-    assert "timesfm" in capabilities, "timesfm family not defined"
+    # Check for models section
+    assert "models" in registry, "registry missing 'models' key"
+    models = registry["models"]
+
+    # Check for required model keys (short form, not full HuggingFace IDs)
+    # Registry uses short keys, get_model_spec() handles extracting them from full IDs
+    required_model_keys = [
+        "chronos-2-base",
+        "chronos-2-large",
+        "timesfm-2.5-200m",
+    ]
+
+    for model_key in required_model_keys:
+        assert model_key in models, f"registry missing required model: {model_key}"
 
 
-def test_chronos_family_structure():
-    """Verify chronos family has correct hierarchical structure."""
-    capabilities_path = (
+def test_registry_model_structure():
+    """Verify registry models have correct structure."""
+    registry_path = (
         Path(__file__).parents[4]
         / "darts"
         / "models"
         / "forecasting"
         / "foundation"
-        / "capabilities.yaml"
+        / "registry.yaml"
     )
 
-    with open(capabilities_path, "r") as f:
-        capabilities = yaml.safe_load(f)
+    with open(registry_path, "r") as f:
+        registry = yaml.safe_load(f)
 
-    chronos = capabilities["chronos"]
+    models = registry["models"]
 
-    # Check for subfamilies
-    assert "subfamilies" in chronos, "chronos missing 'subfamilies' key"
-    assert isinstance(chronos["subfamilies"], dict), \
-        "chronos subfamilies must be a dictionary"
+    # Check each model has required sections
+    for model_id, model_spec in models.items():
+        assert "metadata" in model_spec, \
+            f"model {model_id} missing 'metadata' section"
+        assert "capabilities" in model_spec, \
+            f"model {model_id} missing 'capabilities' section"
+        assert "constraints" in model_spec, \
+            f"model {model_id} missing 'constraints' section"
 
-    # Check at least one subfamily exists
-    assert len(chronos["subfamilies"]) > 0, \
-        "chronos must have at least one subfamily"
 
-
-def test_subfamily_has_capabilities():
-    """Verify subfamilies have required capability flags."""
-    capabilities_path = (
+def test_model_has_capabilities():
+    """Verify models have required capability flags."""
+    registry_path = (
         Path(__file__).parents[4]
         / "darts"
         / "models"
         / "forecasting"
         / "foundation"
-        / "capabilities.yaml"
+        / "registry.yaml"
     )
 
-    with open(capabilities_path, "r") as f:
-        capabilities = yaml.safe_load(f)
+    with open(registry_path, "r") as f:
+        registry = yaml.safe_load(f)
 
-    # Check chronos subfamily has capability flags
-    chronos = capabilities["chronos"]
-    subfamilies = chronos["subfamilies"]
+    models = registry["models"]
 
-    # Get first subfamily (chronos-2 has no variants, capabilities at subfamily level)
-    first_subfamily = next(iter(subfamilies.values()))
+    # Get first model to check structure
+    first_model = next(iter(models.values()))
+    capabilities = first_model["capabilities"]
 
     # Check for required capability flags
     required_capabilities = [
@@ -183,7 +193,7 @@ def test_subfamily_has_capabilities():
     ]
 
     for capability in required_capabilities:
-        assert capability in first_subfamily, \
-            f"subfamily missing required capability: {capability}"
-        assert isinstance(first_subfamily[capability], bool), \
+        assert capability in capabilities, \
+            f"model missing required capability: {capability}"
+        assert isinstance(capabilities[capability], bool), \
             f"capability '{capability}' must be boolean"

@@ -65,9 +65,12 @@ def test_univariate_model_rejects_multivariate_series():
 
     # Create test model
     class TestModel(base.FoundationForecastingModel):
-        _family_name = "chronos"
-        _subfamily_name = "chronos-2"
-        _variant_name = "base"
+        _family_name = "timesfm"
+        _subfamily_name = "2.5"
+        _variant_name = "200m"
+
+        def _get_registry_key(self):
+            return "timesfm-2.5-200m"
 
         def _zero_shot_fit(self, *args, **kwargs):
             return self
@@ -118,9 +121,12 @@ def test_univariate_model_accepts_univariate_series():
 
     # Create test model
     class TestModel(base.FoundationForecastingModel):
-        _family_name = "chronos"
-        _subfamily_name = "chronos-2"
-        _variant_name = "base"
+        _family_name = "timesfm"
+        _subfamily_name = "2.5"
+        _variant_name = "200m"
+
+        def _get_registry_key(self):
+            return "timesfm-2.5-200m"
 
         def _zero_shot_fit(self, *args, **kwargs):
             return self

@@ -1,0 +1,59 @@
+# Foundation Model Registry
+# Single source of truth for foundation model capabilities and constraints
+#
+# This registry documents NATIVE model capabilities, not Darts wrapper limitations.
+# Each model entry includes metadata, native capabilities, quantile support, and constraints.
+
+models:
+  # Chronos 2 Family - Multivariate probabilistic forecasting with covariate support
+  chronos-2-base:
+    metadata:
+      name: "Chronos 2 Base"
+      params: 120e6  # 120 million parameters
+      paper: "https://arxiv.org/abs/2510.15821"
+      huggingface_id: null  # Not yet on HuggingFace
+
+    capabilities:
+      univariate: true
+      multivariate: true
+      past_covariates: true
+      future_covariates: true
+      probabilistic: true
+
+    quantiles:
+      count: 21
+      default: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      supported: [0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99]
+
+    constraints:
+      max_context_length: 8192
+      max_forecast_horizon: 1024
+      patch_size: 16
+      default_context_length: 2048
+
+  # TimesFM Family - Univariate-only probabilistic forecasting (no covariate support)
+  timesfm-2.5-200m:
+    metadata:
+      name: "TimesFM 2.5 200M"
+      params: 200e6  # 200 million parameters
+      paper: "https://arxiv.org/abs/2310.10688"
+      huggingface_id: "google/timesfm-2.5-200m-pytorch"
+
+    capabilities:
+      univariate: true
+      multivariate: false
+      past_covariates: false
+      future_covariates: false
+      probabilistic: true
+
+    quantiles:
+      count: 10
+      default: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      supported: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      note: "Quantiles q0-q90 in increments of 10"
+
+    constraints:
+      max_context_length: 16384  # GitHub README: "supports up to 16k context"
+      max_forecast_horizon: 256  # timesfm.py line 190
+      patch_size: 32  # timesfm.py line 122 validation
+      default_context_length: 1024

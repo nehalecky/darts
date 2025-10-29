@@ -14,6 +14,11 @@ from darts import TimeSeries
 from darts.logging import get_logger, raise_if_not, raise_log
 
 from .base import FoundationForecastingModel
+from .registry import get_model_spec
+from .validation import (
+    validate_context_length,
+    validate_forecast_horizon
+)
 
 logger = get_logger(__name__)
 
@@ -152,12 +157,13 @@ class TimesFMModel(FoundationForecastingModel):
         self.normalize_inputs = normalize_inputs
         self.use_quantile_forecasts = use_quantile_forecasts
 
-        # Load hard architectural limits from capabilities registry
-        caps = get_variant("timesfm", f"timesfm-{model_version}")
-        self._hard_max_context = caps["max_context_length"]
-        self._hard_max_horizon = caps["max_forecast_horizon"]
-        self._patch_size = caps["patch_size"]
-        self._default_context_length = caps["default_context_length"]
+        # Load hard architectural limits from registry
+        spec = get_model_spec(f"timesfm-{self.model_version}-200m")
+        constraints = spec["constraints"]
+        self._hard_max_context = constraints["max_context_length"]
+        self._hard_max_horizon = constraints["max_forecast_horizon"]
+        self._patch_size = constraints["patch_size"]
+        self._default_context_length = constraints["default_context_length"]
 
         # Validate and set user's minimum context_length preference
         if context_length is None:
