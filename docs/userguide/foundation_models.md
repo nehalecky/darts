@@ -33,7 +33,7 @@ Choosing the right forecasting approach depends on your specific requirements. H
 | **Max Forecast Horizon** | 256 steps | 1024 steps | Unlimited |
 | **Multivariate Support** | ❌ Univariate only | ✅ Yes (multivariate) | ✅ Many models |
 | **Covariates Support** | ❌ Not supported | ✅ Past & Future covariates | ✅ Widely supported |
-| **Model Size** | 200M parameters | 120M (base), 710M (large) | Varies widely |
+| **Model Size** | 200M parameters | 120M (base) | Varies widely |
 | **Inference Speed** | ⚡ Fast (decoder-only) | 🐢 Moderate (encoder-decoder) | ⚡⚡ Very fast |
 | **Memory Usage** | ~2GB GPU/RAM | ~1.5GB GPU/RAM | <100MB |
 | **Best For** | Quick prototyping, hourly/daily data | Complex forecasting with external signals | Explainability, domain knowledge |
@@ -333,9 +333,9 @@ prob_forecast = model.predict(
 )
 
 # Access different quantiles
-median = prob_forecast.quantile_timeseries(quantile=0.5)
-lower_90 = prob_forecast.quantile_timeseries(quantile=0.05)
-upper_90 = prob_forecast.quantile_timeseries(quantile=0.95)
+median = prob_forecast.quantile(0.5)
+lower_90 = prob_forecast.quantile(0.05)
+upper_90 = prob_forecast.quantile(0.95)
 ```
 
 The probabilistic nature makes Chronos 2 particularly valuable for:
@@ -373,7 +373,7 @@ series = TimeSeries.from_dataframe(sales_df, value_cols=['sales'])
 weather_history = TimeSeries.from_dataframe(weather_df, value_cols=['temperature'])
 
 # Create model and fit with past covariates
-model = ChronosModel(model_id="amazon/chronos-2-base")
+model = ChronosModel()  # Chronos 2 Base by default
 model.fit(series, past_covariates=weather_history)
 
 # Predict using past covariates
@@ -488,10 +488,9 @@ This comprehensive comparison shows the native capabilities of each foundation m
 | Model | Parameters | Context Window | Max Horizon | Univariate | Multivariate | Past Covariates | Future Covariates | Probabilistic | Quantiles |
 |-------|------------|----------------|-------------|------------|--------------|-----------------|-------------------|---------------|-----------|
 | **Chronos 2 Base** | 120M | 8192 | 1024 | ✅ | ✅ | ✅ | ✅ | ✅ | 21 |
-| **Chronos 2 Large** | 710M | 8192 | 1024 | ✅ | ✅ | ✅ | ✅ | ✅ | 21 |
-| **TimesFM 2.5** | 200M | 16K | — | ✅ | ❌ | ❌ | ❌ | ✅ | 10 |
+| **TimesFM 2.5** | 200M | 512 | — | ✅ | ❌ | ❌ | ❌ | ✅ | 10 |
 
-*Note: TimesFM 2.5 with 200M parameters is the only publicly available version.*
+*Note: Only Chronos 2 Base (120M) and TimesFM 2.5 (200M) are currently supported in Darts.*
 
 ### Capability Legend
 
@@ -581,5 +580,4 @@ Chronos 2 supports:
 **External Resources:**
 - **[TimesFM GitHub](https://github.com/google-research/timesfm)** - Google's official repository
 - **[TimesFM HuggingFace](https://huggingface.co/google/timesfm-2.5-200m-pytorch)** - Pre-trained model
-- **[Chronos GitHub](https://github.com/amazon-science/chronos-forecasting)** - Amazon's official repository
-- **[Chronos HuggingFace](https://huggingface.co/amazon/chronos-2)** - Pre-trained model
+- **[Chronos GitHub](https://github.com/amazon-science/chronos-forecasting)** - Amazon's official repository (Chronos 2 loaded via chronos-forecasting package)

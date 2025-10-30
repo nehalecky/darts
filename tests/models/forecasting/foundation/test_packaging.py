@@ -132,7 +132,6 @@ def test_registry_has_required_models():
     # Registry uses short keys, get_model_spec() handles extracting them from full IDs
     required_model_keys = [
         "chronos-2-base",
-        "chronos-2-large",
         "timesfm-2.5-200m",
     ]
 

@@ -367,7 +367,7 @@ class FoundationForecastingModel(GlobalForecastingModel):
         Parameters
         ----------
         model_id : str
-            Model identifier to look up in registry (e.g., "amazon/chronos-2-base").
+            Model identifier to look up in registry (e.g., "amazon/chronos-t5-base").
         past_covariates : TimeSeries or List[TimeSeries], optional
             Past covariates being used. If provided, model must support past_covariates.
         future_covariates : TimeSeries or List[TimeSeries], optional

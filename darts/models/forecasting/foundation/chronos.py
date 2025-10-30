@@ -660,9 +660,25 @@ class ChronosModel(FoundationForecastingModel):
             "series is required for zero-shot forecasting with ChronosModel"
         )
 
+        # Truncate series to context_length (use last N points)
+        # This ensures consistent behavior with TimesFM and respects user's context_length setting
+        if isinstance(series, list):
+            truncated_series = [s[-self.context_length:] if len(s) > self.context_length else s for s in series]
+        else:
+            truncated_series = series[-self.context_length:] if len(series) > self.context_length else series
+
+        # Truncate past_covariates to align with truncated series
+        if past_covariates is not None:
+            if isinstance(past_covariates, list):
+                truncated_past_cov = [pc[-self.context_length:] if len(pc) > self.context_length else pc for pc in past_covariates]
+            else:
+                truncated_past_cov = past_covariates[-self.context_length:] if len(past_covariates) > self.context_length else past_covariates
+        else:
+            truncated_past_cov = None
+
         # Convert Darts TimeSeries to Chronos DataFrame format with covariates
-        logger.debug("Converting TimeSeries to Chronos DataFrame format...")
-        context_df = _timeseries_to_chronos_df(series, past_covariates, future_covariates)
+        logger.debug(f"Converting TimeSeries to Chronos DataFrame format (context_length={self.context_length})...")
+        context_df = _timeseries_to_chronos_df(truncated_series, truncated_past_cov, future_covariates)
 
         # Create future DataFrame with future covariates if provided
         future_df = _create_future_df(series, future_covariates, n)

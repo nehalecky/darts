@@ -48,7 +48,7 @@ def load_registry() -> Dict[str, Any]:
     --------
     >>> registry = load_registry()
     >>> list(registry['models'].keys())
-    ['chronos-2-base', 'chronos-2-large', 'timesfm-2.5-200m']
+    ['chronos-2-base', 'timesfm-2.5-200m']
     """
     if not REGISTRY_PATH.exists():
         raise FileNotFoundError(
@@ -77,7 +77,7 @@ def get_model_spec(model_id: str) -> Dict[str, Any]:
     Get the specification for a specific model.
 
     Accepts both short model keys (e.g., "chronos-2-base") and full
-    HuggingFace model IDs (e.g., "amazon/chronos-2-base"). When a full
+    HuggingFace model IDs (e.g., "amazon/chronos-t5-base"). When a full
     ID is provided, it extracts the model key from the last component.
 
     Parameters
@@ -98,7 +98,7 @@ def get_model_spec(model_id: str) -> Dict[str, Any]:
 
     Examples
     --------
-    >>> spec = get_model_spec("amazon/chronos-2-base")
+    >>> spec = get_model_spec("amazon/chronos-t5-base")
     >>> spec['capabilities']['multivariate']
     True
     >>> spec['constraints']['max_context_length']
@@ -108,7 +108,7 @@ def get_model_spec(model_id: str) -> Dict[str, Any]:
     models = registry["models"]
 
     # Extract model key from full HuggingFace ID if needed
-    # e.g., "amazon/chronos-2-base" -> "chronos-2-base"
+    # e.g., "amazon/chronos-t5-base" -> "chronos-2-base"
     model_key = model_id.split("/")[-1]
 
     if model_key not in models:
@@ -125,7 +125,7 @@ def list_models(**filters) -> List[str]:
     """
     List model IDs that match the specified capability filters.
 
-    Returns full HuggingFace model IDs (e.g., "amazon/chronos-2-base").
+    Returns full HuggingFace model IDs (e.g., "amazon/chronos-t5-base").
     If no filters are provided, returns all models.
 
     Parameters
@@ -147,11 +147,11 @@ def list_models(**filters) -> List[str]:
     --------
     >>> # Get all multivariate models
     >>> list_models(multivariate=True)
-    ['amazon/chronos-2-base', 'amazon/chronos-2-large']
+    ['amazon/chronos-t5-base']
 
     >>> # Get models with covariate support
     >>> list_models(past_covariates=True, future_covariates=True)
-    ['amazon/chronos-2-base', 'amazon/chronos-2-large']
+    ['amazon/chronos-t5-base']
 
     >>> # Get univariate-only models
     >>> list_models(univariate=True, multivariate=False)
@@ -215,7 +215,7 @@ class ContextUtilization:
     Examples
     --------
     >>> util = ContextUtilization(
-    ...     model_id="amazon/chronos-2-base",
+    ...     model_id="amazon/chronos-t5-base",
     ...     max_context=8192,
     ...     target_series_points=500,
     ...     num_dimensions=3
@@ -227,7 +227,7 @@ class ContextUtilization:
     >>> util.is_efficient
     False
     >>> print(util)
-    ContextUtilization(amazon/chronos-2-base): 1500/8192 points (18.3%) - Underutilized
+    ContextUtilization(amazon/chronos-t5-base): 1500/8192 points (18.3%) - Underutilized
     """
 
     model_id: str

@@ -9,9 +9,9 @@ models:
   chronos-2-base:
     metadata:
       name: "Chronos 2 Base"
-      params: 120e6  # 120 million parameters
-      paper: "https://arxiv.org/abs/2510.15821"
-      huggingface_id: null  # Not yet on HuggingFace
+      params: 120_000_000
+      # Note: Chronos 2 is not yet available on HuggingFace
+      # Model loading is handled by chronos-forecasting>=2.0.0 package
 
     capabilities:
       univariate: true
@@ -35,9 +35,9 @@ models:
   timesfm-2.5-200m:
     metadata:
       name: "TimesFM 2.5 200M"
-      params: 200e6  # 200 million parameters
-      paper: "https://arxiv.org/abs/2310.10688"
-      huggingface_id: "google/timesfm-2.5-200m-pytorch"
+      model_id: "google/timesfm-2.5-200m"
+      params: 200_000_000
+      huggingface_url: "https://huggingface.co/google/timesfm-2.5-200m"
 
     capabilities:
       univariate: true
