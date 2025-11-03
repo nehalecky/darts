@@ -21,13 +21,20 @@ logger = get_logger(__name__)
 
 class FoundationForecastingModel(GlobalForecastingModel):
     """
-    Base class for foundation models with optional PEFT support.
+    Base class for foundation models with unified loading and PEFT support.
 
     Foundation models are pre-trained on massive time series datasets, enabling:
 
     - **Zero-shot forecasting**: Direct prediction without calling fit()
     - **Few-shot learning**: In-context learning from example series
     - **Fine-tuning**: Parameter-efficient adaptation via PEFT (LoRA, Prefix Tuning)
+
+    This base class provides:
+
+    - **Lazy loading**: Models load on first .model property access (not at import)
+    - **Device management**: Automatic detection of CUDA/MPS/CPU via device_utils
+    - **Unified pattern**: All subclasses implement _load_pretrained_model()
+    - **PEFT infrastructure**: LoRA support via lora_config parameter
 
     The fit() method is **optional** for zero-shot usage but required for fine-tuning.
     When `lora_config` is provided, fit() applies PEFT adapters and trains them.
@@ -46,6 +53,9 @@ class FoundationForecastingModel(GlobalForecastingModel):
 
     Parameters
     ----------
+    device : str, optional
+        Device to use ("cuda", "mps", "cpu"). If None, automatically detects
+        best available device using device_utils.auto_detect_device().
     lora_config : dict, optional
         LoRA configuration following Hugging Face PEFT pattern.
         When provided, enables parameter-efficient fine-tuning.
@@ -68,12 +78,6 @@ class FoundationForecastingModel(GlobalForecastingModel):
     >>> model = TimesFMModel()
     >>> forecast = model.predict(n=12, series=my_series)
 
-    Quantile-based probabilistic forecasting:
-
-    >>> model = ChronosModel()
-    >>> # Specify quantiles explicitly (recommended)
-    >>> forecast = model.predict(n=24, series=my_series, quantiles=[0.1, 0.5, 0.9])
-
     Fine-tuning with LoRA:
 
     >>> model = TimesFMModel(
@@ -82,6 +86,18 @@ class FoundationForecastingModel(GlobalForecastingModel):
     >>> model.fit(series=training_data, epochs=10)
     >>> forecast = model.predict(n=12)
 
+    Custom device selection:
+
+    >>> model = ChronosModel(device="cuda")  # Explicit CUDA
+    >>> model = TimesFMModel(device="mps")   # Apple Silicon
+    >>> model = ChronosModel()               # Auto-detect (default)
+
+    Quantile-based probabilistic forecasting:
+
+    >>> model = ChronosModel()
+    >>> # Specify quantiles explicitly (recommended)
+    >>> forecast = model.predict(n=24, series=my_series, quantiles=[0.1, 0.5, 0.9])
+
     Notes
     -----
     Foundation models follow different patterns than traditional Darts models:
@@ -89,7 +105,14 @@ class FoundationForecastingModel(GlobalForecastingModel):
     - fit() is optional for zero-shot usage
     - predict() can be called without prior fit() call
     - Fine-tuning uses PEFT to train <1% of parameters efficiently
+    - Models lazy-load on first .model access (no download at import)
     - Use `quantiles` parameter instead of `num_samples` for clearer semantics
+
+    Subclasses must implement:
+
+    - _load_pretrained_model() -> returns loaded model object
+    - _zero_shot_fit() -> validates inputs without training (optional override)
+    - _apply_peft() -> applies PEFT adapters (optional, for fine-tuning)
 
     References
     ----------

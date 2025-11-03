@@ -8,19 +8,37 @@ Foundation models are pre-trained on massive datasets (100B+ time points) enabli
 - Few-shot learning via in-context examples
 - Parameter-efficient fine-tuning (PEFT) with LoRA
 
+Architecture
+------------
+All foundation models inherit from FoundationForecastingModel, which provides:
+
+- **Lazy loading**: Models download on first use, not at import
+- **Device management**: Automatic CUDA/MPS/CPU detection
+- **Unified pattern**: Consistent .model property and _load_pretrained_model()
+- **PEFT support**: LoRA fine-tuning infrastructure
+
 Available Models
 ----------------
 - TimesFMModel : Google's decoder-only transformer (200M parameters)
+  - Univariate only, no covariate support
+  - Max context: 16384 tokens
+  - Source: HuggingFace Hub
+
 - ChronosModel : Amazon's T5-based probabilistic forecaster (120M parameters)
+  - Multivariate with past/future covariate support
+  - Max context: 8192 tokens
+  - Source: S3 bucket
 
 Base Classes
 ------------
-- FoundationForecastingModel : Base class for foundation models with PEFT support
+- FoundationForecastingModel : Base class with lazy loading and PEFT support
 
 Utilities
 ---------
-- peft_utils : LoRA and PEFT helper functions
 - device_utils : Device detection and memory management
+- validation : Context length and horizon validators
+- registry : Model capability metadata and discovery
+- peft_utils : LoRA and PEFT helper functions
 
 Examples
 --------
@@ -30,10 +48,16 @@ Zero-shot forecasting:
 >>> model = TimesFMModel()
 >>> forecast = model.predict(n=12, series=my_series)
 
+With device selection:
+
+>>> model = ChronosModel(device="cuda")
+>>> forecast = model.predict(n=12, series=my_series)
+
 Fine-tuning with LoRA:
 
 >>> model = TimesFMModel(lora_config={"r": 8, "lora_alpha": 16})
 >>> model.fit(series=training_data, epochs=10)
+>>> forecast = model.predict(n=12)
 
 References
 ----------
