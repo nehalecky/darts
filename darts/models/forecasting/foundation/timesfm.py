@@ -12,8 +12,8 @@ import torch
 
 from darts import TimeSeries
 from darts.logging import get_logger, raise_if_not, raise_log
-from darts.models.forecasting.forecasting_model import GlobalForecastingModel
-from darts.models.forecasting.foundation.capabilities import get_variant
+from darts.models.forecasting.foundation.base import FoundationForecastingModel
+from darts.models.forecasting.foundation.registry import get_model_spec
 from darts.models.forecasting.foundation.validation import (
     validate_context_length,
     validate_forecast_horizon
@@ -22,15 +22,10 @@ from darts.models.forecasting.foundation.validation import (
 logger = get_logger(__name__)
 
 
-class TimesFMModel(GlobalForecastingModel):
+class TimesFMModel(FoundationForecastingModel):
     """
     TimesFM Foundation Model for Time Series Forecasting
     -----------------------------------------------------
-
-    TODO: Migrate TimesFMModel to inherit from FoundationForecastingModel
-          instead of GlobalForecastingModel. This will provide better consistency
-          with other foundation models (ChronosModel) and enable shared capabilities
-          infrastructure. Currently on legacy infrastructure for backward compatibility.
 
     This class provides a wrapper around Google's TimesFM 2.5 foundation model
     (200M parameters). TimesFM is a decoder-only transformer pre-trained on
@@ -114,9 +109,34 @@ class TimesFMModel(GlobalForecastingModel):
         zero_shot: bool = True,
         device: Optional[str] = None,
         normalize_inputs: bool = True,
+        lora_config: Optional[dict] = None,
         **kwargs
     ):
-        super().__init__()
+        """
+        Initialize TimesFM model.
+
+        Parameters
+        ----------
+        context_length : int, optional
+            Maximum number of historical time points to use as context.
+            Must be a multiple of 32 (TimesFM's patch size) and positive.
+            If None, defaults to 1024.
+        max_forecast_horizon : int, optional
+            Maximum forecast horizon to support. If None, defaults to 4096.
+        zero_shot : bool, default=True
+            If True, use pre-trained weights without fine-tuning.
+        device : str, optional
+            Device to use ("cpu", "cuda", or "mps").
+            If None, automatically detects best available device.
+        normalize_inputs : bool, default=True
+            Whether to normalize inputs before forecasting
+        lora_config : dict, optional
+            LoRA configuration for parameter-efficient fine-tuning.
+        **kwargs
+            Additional arguments passed to FoundationForecastingModel.
+        """
+        # Initialize base class (handles device detection and lazy loading)
+        super().__init__(device=device, lora_config=lora_config, **kwargs)
 
         # Always use TimesFM 2.5 200M (only publicly available version)
         self.model_version = "2.5"
@@ -124,12 +144,13 @@ class TimesFMModel(GlobalForecastingModel):
         self.zero_shot = zero_shot
         self.normalize_inputs = normalize_inputs
 
-        # Load hard architectural limits from capabilities registry
-        caps = get_variant("timesfm", f"timesfm-{self.model_version}")
-        self._hard_max_context = caps["max_context_length"]
-        self._hard_max_horizon = caps["max_forecast_horizon"]
-        self._patch_size = caps["patch_size"]
-        self._default_context_length = caps["default_context_length"]
+        # Load hard architectural limits from registry
+        spec = get_model_spec(f"timesfm-{self.model_version}-{self.model_size}")
+        constraints = spec["constraints"]
+        self._hard_max_context = constraints["max_context_length"]
+        self._hard_max_horizon = constraints["max_forecast_horizon"]
+        self._patch_size = constraints["patch_size"]
+        self._default_context_length = constraints["default_context_length"]
 
         # Validate and set user's minimum context_length preference
         if context_length is None:
@@ -149,34 +170,20 @@ class TimesFMModel(GlobalForecastingModel):
             )
             self.max_forecast_horizon = max_forecast_horizon
 
-        # Auto-detect device
-        self.device = self._detect_device() if device is None else device
-
-        # Lazy load model (only when needed)
-        self._model = None
-
         logger.info(
             f"Initialized TimesFM 2.5 (200M params) "
             f"with context length {self.context_length} on {self.device}"
         )
 
-    def _detect_device(self) -> str:
-        """Auto-detect best available device"""
-        if torch.cuda.is_available():
-            device = "cuda"
-        elif torch.backends.mps.is_available():
-            device = "mps"
-        else:
-            device = "cpu"
+    def _load_pretrained_model(self):
+        """
+        Load TimesFM model from HuggingFace.
 
-        logger.info(f"Auto-detected device: {device}")
-        return device
-
-    def _load_model(self):
-        """Lazy load TimesFM model from HuggingFace"""
-        if self._model is not None:
-            return
-
+        Returns
+        -------
+        model
+            Loaded and compiled TimesFM model.
+        """
         try:
             import timesfm
         except ImportError:
@@ -202,12 +209,12 @@ class TimesFMModel(GlobalForecastingModel):
             torch.set_float32_matmul_precision("high")
 
             # Load TimesFM 2.5 200M model from HuggingFace
-            self._model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(
+            model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(
                 "google/timesfm-2.5-200m-pytorch"
             )
 
             # Compile model with forecast configuration
-            self._model.compile(
+            model.compile(
                 timesfm.ForecastConfig(
                     max_context=self.context_length,
                     max_horizon=256,  # Default, can be overridden in predict
@@ -220,10 +227,10 @@ class TimesFMModel(GlobalForecastingModel):
             )
 
             logger.info(f"✓ Loaded TimesFM {self.model_version} ({self.model_size})")
+            return model
 
         except Exception as e:
             logger.error(f"Failed to load TimesFM model: {e}")
-            logger.error("Model loading will be attempted again on first predict() call")
             raise
 
     @property
@@ -304,22 +311,23 @@ class TimesFMModel(GlobalForecastingModel):
         """
         return 0, 0, False, False
 
-    def fit(
+    def _zero_shot_fit(
         self,
         series: Union[TimeSeries, List[TimeSeries]],
         past_covariates: Optional[Union[TimeSeries, List[TimeSeries]]] = None,
         future_covariates: Optional[Union[TimeSeries, List[TimeSeries]]] = None,
+        **kwargs
     ) -> "TimesFMModel":
         """
-        Fit the TimesFM model.
+        Validate inputs for zero-shot inference.
 
-        In zero-shot mode, this just validates inputs and loads the pre-trained model.
-        No actual training occurs since TimesFM is a foundation model.
+        In zero-shot mode, this validates inputs and loads the pre-trained model.
+        No training occurs.
 
         Parameters
         ----------
         series : TimeSeries or List[TimeSeries]
-            Training time series. Must be univariate.
+            Time series for validation. Must be univariate.
         past_covariates : TimeSeries or List[TimeSeries], optional
             Past covariates (not currently supported)
         future_covariates : TimeSeries or List[TimeSeries], optional
@@ -328,10 +336,8 @@ class TimesFMModel(GlobalForecastingModel):
         Returns
         -------
         self : TimesFMModel
-            Fitted model instance
+            Validated model ready for prediction.
         """
-        super().fit(series, past_covariates, future_covariates)
-
         # Validate series
         series_list = [series] if isinstance(series, TimeSeries) else series
 
@@ -353,23 +359,57 @@ class TimesFMModel(GlobalForecastingModel):
             logger.warning("TimesFM does not use past_covariates; they will be ignored")
 
         if future_covariates is not None:
-            logger.warning("Future covariates not yet supported in this version; they will be ignored")
+            logger.warning("Future covariates not yet supported; they will be ignored")
 
-        # Load pre-trained model
-        self._load_model()
-
-        if self.zero_shot:
-            logger.info(
-                "Zero-shot mode: fit() validates inputs and loads pre-trained model. "
-                "No training/weight updates occur. Ready for immediate forecasting."
-            )
-        else:
-            raise NotImplementedError(
-                "Fine-tuning support coming in future version. "
-                "For now, use zero_shot=True"
-            )
+        logger.info(
+            "Zero-shot mode: fit() validates inputs and loads pre-trained model. "
+            "No training occurs. Ready for immediate forecasting."
+        )
 
         return self
+
+    def _apply_peft(self) -> None:
+        """
+        Apply PEFT configuration to the base model.
+
+        Raises
+        ------
+        NotImplementedError
+            PEFT is not yet implemented for TimesFM.
+        """
+        raise NotImplementedError(
+            "TimesFM does not yet support PEFT fine-tuning"
+        )
+
+    def _train_with_peft(
+        self,
+        series: Union[TimeSeries, List[TimeSeries]],
+        past_covariates: Optional[Union[TimeSeries, List[TimeSeries]]],
+        future_covariates: Optional[Union[TimeSeries, List[TimeSeries]]],
+        **kwargs
+    ) -> "TimesFMModel":
+        """
+        Train the PEFT adapters on the provided data.
+
+        Raises
+        ------
+        NotImplementedError
+            PEFT training is not yet implemented for TimesFM.
+        """
+        raise NotImplementedError(
+            "TimesFM does not yet support PEFT training"
+        )
+
+    def _get_registry_key(self) -> str:
+        """
+        Get the registry key for this model.
+
+        Returns
+        -------
+        str
+            Registry key for capability lookup.
+        """
+        return f"timesfm-{self.model_version}-{self.model_size}"
 
     def predict(
         self,
@@ -415,10 +455,8 @@ class TimesFMModel(GlobalForecastingModel):
             logger
         )
 
-        # Lazy load model for zero-shot forecasting
-        if self._model is None:
-            logger.info("Loading model for zero-shot forecasting...")
-            self._load_model()
+        # Access .model property (triggers lazy loading if needed)
+        # Base class handles lazy loading automatically
 
         # Prepare inputs
         is_single = isinstance(series, TimeSeries)
@@ -438,7 +476,7 @@ class TimesFMModel(GlobalForecastingModel):
         logger.info(f"Generating forecasts for {len(inputs)} series, horizon={n}")
 
         # Generate forecasts using TimesFM
-        point_forecasts, quantile_forecasts = self._model.forecast(
+        point_forecasts, quantile_forecasts = self.model.forecast(
             horizon=n,
             inputs=inputs,
         )
