@@ -40,8 +40,9 @@ class TestContextLengthEnforcement:
             '0.5': np.random.randn(10)
         }))
 
-        # Mock _pipeline (the underlying attribute, not the property)
-        model._pipeline = mock_pipeline
+        # Mock _model (the underlying attribute via base class)
+        model._model = mock_pipeline
+        model._is_loaded = True
         model._fit_called = True
 
         # Predict with long series
@@ -80,7 +81,8 @@ class TestContextLengthEnforcement:
             '0.5': np.random.randn(10)
         }))
 
-        model._pipeline = mock_pipeline
+        model._model = mock_pipeline
+        model._is_loaded = True
         model._fit_called = True
         _ = model.predict(n=10, series=series)
 
@@ -116,7 +118,8 @@ class TestContextLengthEnforcement:
             '0.5': np.random.randn(10)
         }))
 
-        model._pipeline = mock_pipeline
+        model._model = mock_pipeline
+        model._is_loaded = True
         model._fit_called = True
         _ = model.predict(n=10, series=series, past_covariates=past_cov)
 
@@ -153,7 +156,8 @@ class TestContextLengthEnforcement:
             '0.5': np.random.randn(10)
         }))
 
-        model._pipeline = mock_pipeline
+        model._model = mock_pipeline
+        model._is_loaded = True
         model._fit_called = True
         _ = model.predict(n=10, series=short_series)
 
@@ -221,7 +225,8 @@ class TestContextLengthConsistency:
             '0.5': np.random.randn(10)
         }))
 
-        chronos._pipeline = mock_chronos_pipeline
+        chronos._model = mock_chronos_pipeline
+        chronos._is_loaded = True
         chronos._fit_called = True
         _ = chronos.predict(n=10, series=series)
 
@@ -264,7 +269,8 @@ def test_context_length_truncation_cases(series_length, context_length, expected
         '0.5': np.random.randn(10)
     }))
 
-    model._pipeline = mock_pipeline
+    model._model = mock_pipeline
+    model._is_loaded = True
     model._fit_called = True
     _ = model.predict(n=10, series=series)
 
