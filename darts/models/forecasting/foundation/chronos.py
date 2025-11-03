@@ -409,7 +409,8 @@ class ChronosModel(FoundationForecastingModel):
         # Check chronos-forecasting is available
         _check_chronos_available()
 
-        super().__init__(lora_config=lora_config, **kwargs)
+        # Pass device to base class for unified device management
+        super().__init__(device=device, lora_config=lora_config, **kwargs)
 
         # Load hard architectural limits from registry
         spec = get_model_spec("chronos-2-base")
@@ -438,23 +439,29 @@ class ChronosModel(FoundationForecastingModel):
             self.max_forecast_horizon = max_forecast_horizon
 
         self.model_id = model_id
-        self.device = device
-        self._pipeline = None  # Lazy loading
+        # Note: self.device now set by base class
+        # Note: self._model now managed by base class (not self._pipeline)
 
-    @property
-    def pipeline(self):
-        """Lazy-load Chronos2Pipeline on first use."""
-        if self._pipeline is None:
-            from chronos import Chronos2Pipeline
+    def _load_pretrained_model(self):
+        """
+        Load Chronos2Pipeline from pretrained source.
 
-            logger.info(f"Loading Chronos2Pipeline from '{self.model_id}'...")
-            self._pipeline = Chronos2Pipeline.from_pretrained(
-                self.model_id,
-                device_map=self.device if self.device != "auto" else None
-            )
-            logger.info("Chronos2Pipeline loaded successfully")
+        Returns
+        -------
+        pipeline
+            Loaded Chronos2Pipeline ready for inference.
+        """
+        from chronos import Chronos2Pipeline
 
-        return self._pipeline
+        logger.info(f"Loading Chronos2Pipeline from '{self.model_id}'...")
+
+        pipeline = Chronos2Pipeline.from_pretrained(
+            self.model_id,
+            device_map=self.device if self.device != "auto" else None
+        )
+
+        logger.info("✓ Chronos2Pipeline loaded successfully")
+        return pipeline
 
     def _get_registry_key(self) -> str:
         """Get registry key for Chronos model."""
@@ -694,7 +701,7 @@ class ChronosModel(FoundationForecastingModel):
 
         # Call Chronos2Pipeline.predict_df()
         logger.debug(f"Calling Chronos2Pipeline.predict_df(prediction_length={n}, quantiles={quantiles})...")
-        pred_df = self.pipeline.predict_df(
+        pred_df = self.model.predict_df(
             context_df,
             prediction_length=n,
             quantile_levels=quantiles,  # Note: Chronos library still uses quantile_levels internally
