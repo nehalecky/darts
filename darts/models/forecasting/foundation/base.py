@@ -103,7 +103,7 @@ class FoundationForecastingModel(GlobalForecastingModel):
     _subfamily_name: Optional[str] = None
     _variant_name: Optional[str] = None
 
-    def __init__(self, lora_config: Optional[Dict] = None, **kwargs):
+    def __init__(self, lora_config: Optional[Dict] = None, device: Optional[str] = None, **kwargs):
         """
         Initialize foundation forecasting model.
 
@@ -111,13 +111,91 @@ class FoundationForecastingModel(GlobalForecastingModel):
         ----------
         lora_config : dict, optional
             LoRA configuration for parameter-efficient fine-tuning.
+        device : str, optional
+            Device to use ("cuda", "mps", "cpu"). If None, automatically detects
+            best available device using device_utils.auto_detect_device().
         **kwargs
             Additional arguments passed to GlobalForecastingModel.
         """
         super().__init__(**kwargs)
+
+        # Use shared device detection utility
+        if device is None:
+            from .device_utils import auto_detect_device
+            self.device = auto_detect_device()
+        else:
+            self.device = device
+
+        # Lazy loading state
+        self._model = None
+        self._is_loaded = False
+
+        # PEFT configuration
         self.lora_config = lora_config
         self._peft_model = None
         self._is_peft_applied = False
+
+    @property
+    def model(self):
+        """
+        Lazy-load the pretrained model on first access.
+
+        Returns the cached model on subsequent calls. Subclasses must
+        implement _load_pretrained_model() to specify how to load.
+
+        Returns
+        -------
+        model
+            The loaded pretrained model (cached after first access).
+
+        Examples
+        --------
+        >>> model = TimesFMModel()
+        >>> # Model not loaded yet
+        >>> forecast = model.predict(n=12, series=data)
+        >>> # .predict() accesses .model property, triggering load
+        """
+        if not self._is_loaded:
+            logger.info(f"Loading {self.__class__.__name__} pretrained model...")
+            self._model = self._load_pretrained_model()
+            self._is_loaded = True
+            logger.info(f"✓ Model loaded successfully")
+        return self._model
+
+    @abstractmethod
+    def _load_pretrained_model(self):
+        """
+        Load the pretrained model from source (HuggingFace, S3, local).
+
+        Subclasses implement this to return the loaded model object.
+        No lazy loading logic needed - base class handles that via .model property.
+
+        Returns
+        -------
+        model
+            Loaded pretrained model (pipeline, module, or model object).
+
+        Examples
+        --------
+        TimesFM implementation:
+
+        >>> def _load_pretrained_model(self):
+        ...     import timesfm
+        ...     model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(
+        ...         "google/timesfm-2.5-200m-pytorch"
+        ...     )
+        ...     model.compile(timesfm.ForecastConfig(...))
+        ...     return model
+
+        Chronos implementation:
+
+        >>> def _load_pretrained_model(self):
+        ...     from chronos import Chronos2Pipeline
+        ...     return Chronos2Pipeline.from_pretrained(self.model_id)
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement _load_pretrained_model()"
+        )
 
     def fit(
         self,
